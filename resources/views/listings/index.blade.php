@@ -217,3 +217,24 @@
 @push('page-scripts')
     <script src="{{ mix('js/frontend-app-pages/home/index.js') }}"></script>
 @endpush
+
+@push('structured-data')
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Nihon Arubaito",
+    "url": "https://nihonarubaito.com/",
+    "logo": "https://nihonarubaito.com/frontend/images/logo.webp",
+    "description": "Nihonarubaito is a multilingual job search platform helping foreigners find part-time jobs in Japan.",
+    "sameAs": [
+        "https://www.facebook.com/nihonarubaito"
+    ],
+    "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "support@nihonarubaito.com",
+        "contactType": "customer service"
+    }
+}
+</script>
+@endpush

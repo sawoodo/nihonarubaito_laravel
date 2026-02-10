@@ -298,6 +298,13 @@
     @include('admin.jobs.partials.image-gallery-modal')
 @endsection
 
+@push('page-styles')
+    <link href="{{ url('plugins/select2/css/select2.min.css') }}" rel="stylesheet">
+@endpush
+
 @push('page-scripts')
+    <script src="{{ url('plugins/slimScroll/jquery.slimscroll.min.js') }}"></script>
+    <script src="{{ url('plugins/selectable/jquery.selectable.min.js') }}"></script>
+    <script src="{{ url('plugins/select2/js/select2.min.js') }}"></script>
     <script src="{{ mix('/js/backend-app-pages/admin/jobs/create_edit.js') }}"></script>
 @endpush

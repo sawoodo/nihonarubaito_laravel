@@ -14,13 +14,13 @@
             </li>
 
             <li>
-                <a href="{{ url('admin/works') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'work' ? 'class="active"' : '' !!}>
+                <a href="{{ url('admin/works') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'works' ? 'class="active"' : '' !!}>
                     <i class="fa fa-cogs fa-2x fa-fw tw-text-red-600"></i> Works
                 </a>
             </li>
 
             <li>
-                <a href="{{ url('admin/work-descriptions') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'work-descriptions' ? 'class="active"' : '' !!}>
+                <a href="{{ url('admin/work-descriptions') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'work_descriptions' ? 'class="active"' : '' !!}>
                     <i class="fa fa-info-circle fa-2x fa-fw tw-text-orange-500"></i> Work Descriptions
                 </a>
             </li>
@@ -47,13 +47,13 @@
 
             @if ($role_id == 1)
                 <li>
-                    <a href="{{ url('admin/application-logs') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'application-logs' ? 'class="active"' : '' !!}>
+                    <a href="{{ url('admin/application-logs') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'application_logs' ? 'class="active"' : '' !!}>
                         <i class="fa fa-pie-chart fa-2x fa-fw tw-text-purple-700"></i> Application Logs
                     </a>
                 </li>
 
                 <li>
-                    <a href="{{ url('admin/secondary-applies') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'secondary-applies' ? 'class="active"' : '' !!}>
+                    <a href="{{ url('admin/secondary-applies') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'secondary_applies' ? 'class="active"' : '' !!}>
                         <i class="fa fa-signal fa-2x fa-fw tw-text-purple-700"></i> Secondary Applies
                     </a>
                 </li>
@@ -65,7 +65,7 @@
                 </li>
 
                 <li>
-                    <a href="{{ url('admin/blog-posts') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'blog-posts' ? 'class="active"' : '' !!}>
+                    <a href="{{ url('admin/blog-posts') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'blog_posts' ? 'class="active"' : '' !!}>
                         <i class="fa fa-rss-square fa-2x fa-fw tw-text-indigo-600"></i> Blog Posts
                     </a>
                 </li>

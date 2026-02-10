@@ -17,7 +17,7 @@
 
                 <form action="{{ url('subscribe') }}" method="POST" class="submit-form customform loginform">
                     @csrf
-                    <h4>{{ $content->form_heading }}</h4>
+                    <h1 class="h4">{{ $content->form_heading }}</h1>
 
                     <div class="row">
 

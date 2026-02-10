@@ -9,10 +9,32 @@ use Illuminate\Support\Facades\File;
 
 class ImageController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        // JS gallery modal calls GET admin/images expecting JSON
+        if ($request->ajax() || $request->wantsJson()) {
+            $images = Image::orderByDesc('id')->limit(100)->get();
+
+            $data = [];
+            foreach ($images as $img) {
+                $data[] = [
+                    'id'          => $img->id,
+                    'name'        => $img->name,
+                    'ext'         => $img->ext,
+                    'title'       => $img->title ?? '',
+                    'description' => $img->description ?? '',
+                ];
+            }
+
+            return response()->json(['status' => 'ok', 'data' => $data]);
+        }
+
+        // Server-side rendered gallery
+        $images = Image::orderByDesc('id')->limit(200)->get();
+
         return view('admin.images.index', [
             'activeSideMenu' => 'images',
+            'images'         => $images,
         ]);
     }
 
@@ -83,10 +105,13 @@ class ImageController extends Controller
             'ext'  => $ext,
         ]);
 
+        // CI3 Dropzone JS expects: { success: 'ture', image_data: { id, name } }
         return response()->json([
-            'success'   => true,
-            'id'        => $image->id,
-            'file_name' => $fileName,
+            'success'    => 'ture',
+            'image_data' => [
+                'id'   => $image->id,
+                'name' => $fileName,
+            ],
         ]);
     }
 
@@ -103,7 +128,7 @@ class ImageController extends Controller
             'description' => $request->input('description', ''),
         ]);
 
-        return response()->json(['success' => true]);
+        return response()->json(['status' => 'ok', 'success' => true]);
     }
 
     private function resizeImage(string $path, int $maxWidth, int $maxHeight): void

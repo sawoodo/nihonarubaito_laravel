@@ -11,6 +11,9 @@
                         <a href="{{ url('admin/jobs/unfeaturing') }}" class="btn btn-sm tw-btn-red">
                             Make Unfeature <i class="fa fa-star-o fa-fw"></i>
                         </a>
+                        <a href="{{ url('admin/jobs/create-from-xml') }}" class="btn btn-sm tw-btn-indigo">
+                            Create From XML <i class="fa fa-file-excel-o fa-fw"></i>
+                        </a>
                         <a href="{{ url('admin/jobs/create') }}" class="btn btn-sm tw-btn-emerald">
                             Create <i class="fa fa-plus fa-fw"></i>
                         </a>
@@ -257,6 +260,11 @@
     </div>
 @endsection
 
+@push('page-styles')
+    <link href="{{ url('plugins/datepicker/datepicker3.css') }}" rel="stylesheet">
+@endpush
+
 @push('page-scripts')
+    <script src="{{ url('plugins/datepicker/bootstrap-datepicker.js') }}"></script>
     <script src="{{ mix('/js/backend-app-pages/admin/jobs/index.js') }}"></script>
 @endpush

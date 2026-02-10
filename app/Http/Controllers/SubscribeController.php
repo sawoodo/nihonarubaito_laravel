@@ -58,6 +58,8 @@ class SubscribeController extends Controller
             'country_list'   => $countryList,
             'page_title'     => 'Subscribe | Nihon Arubaito',
             'page_description' => 'Subscribe to Nihon Arubaito to receive the latest part-time job notifications in Japan.',
+            'canonical'      => 'https://nihonarubaito.com/subscribe',
+            'og_url'         => 'https://nihonarubaito.com/subscribe',
             'active_nav'     => 'subscribe',
         ]);
     }

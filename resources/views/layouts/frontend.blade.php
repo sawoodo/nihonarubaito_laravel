@@ -134,12 +134,6 @@
     <meta property="og:site_name" content="NihonArubaito - Part-time Jobs in Japan" />
     <meta property="og:type" content="article" />
     <meta property="og:image" content="{{ $og_image ?? '' }}" />
-    <!-- Start Ahref  Script -->
-     <!-- Display the logo image higher in the HTML with inline styles -->
-    <a href="{{ url('/') }}">
-    <img src="{{ url('frontend/images/logo.webp') }}" alt="nihonarubaito" style="width: 250px; height: 50px; display: block; margin: 0 auto;">
-    </a>
-    <!-- Start Ahref  Script -->
     <!-- FAVICONS -->
     <link rel="shortcut icon" href="{{ url('frontend/images/favicon.ico') }}" type="image/x-icon">
 
@@ -148,8 +142,7 @@
 
 
 
-     <!-- Preload logo and critical fonts -->
-    <link rel="preload" href="{{ url('frontend/images/logo.webp') }}" as="image">
+    <!-- Preload critical fonts -->
     <link rel="preload" href="/fonts/poppins-medium-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="/fonts/poppins-light-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="/fonts/fontawesome-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous">
@@ -169,6 +162,8 @@
     <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
     <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
     <![endif]-->
+
+    @stack('structured-data')
 
 </head>
 <body>

@@ -21,6 +21,13 @@ class JobController extends Controller
     public function index(Request $request, string $status = 'all', int $langId = 0, int $userId = 0)
     {
         $user = session('user');
+
+        // Language/User filter form submits via POST
+        if ($request->isMethod('post')) {
+            $langId = (int) $request->input('lang_id', 0);
+            $userId = (int) $request->input('user_id', 0);
+        }
+
         $statusId = $this->getJobStatusId($status);
         $featured = ($status === 'featured');
 
@@ -36,7 +43,7 @@ class JobController extends Controller
             ->get();
 
         $pagination = $this->buildAdminPagination(
-            url("admin/jobs/{$status}") . ($langId ? "/{$langId}" : '') . ($userId ? "/{$userId}" : ''),
+            url("admin/jobs/{$status}/{$langId}/{$userId}"),
             $totalRecords,
             self::PER_PAGE,
             $page
@@ -63,8 +70,8 @@ class JobController extends Controller
             'user_id'       => $userId,
             'language_list' => $languages,
             'user_list'     => $backendUsers,
-            'from'          => '',
-            'to'            => '',
+            'from'          => date('d/m/Y'),
+            'to'            => date('d/m/Y'),
             'search'        => '',
             'activeSideMenu' => 'jobs',
         ]);
@@ -75,19 +82,15 @@ class JobController extends Controller
         $user = session('user');
         $statusId = $this->getJobStatusId($status);
 
-        $search = $request->input('search', '');
-        $from = $request->input('from', date('Y-m-d', strtotime('-30 days')));
-        $to = $request->input('to', date('Y-m-d'));
+        $search = (string) ($request->input('search') ?? '');
+        $fromRaw = $request->input('from', '');
+        $toRaw = $request->input('to', '');
 
-        // Convert date format if needed (d-m-Y to Y-m-d)
-        if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $from)) {
-            $from = date('Y-m-d', strtotime(str_replace('-', '/', $from)));
-        }
-        if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $to)) {
-            $to = date('Y-m-d', strtotime(str_replace('-', '/', $to)));
-        }
+        // Convert dd/mm/yyyy (datepicker format) to Y-m-d (MySQL format)
+        $fromSql = $this->toMysqlDate($fromRaw) ?? date('Y-m-d', strtotime('-30 days'));
+        $toSql = $this->toMysqlDate($toRaw) ?? date('Y-m-d');
 
-        $jobs = Job::searchForBackend($user->id, $user->role_id, $statusId, $search, $from, $to)->get();
+        $jobs = Job::searchForBackend($user->id, $user->role_id, $statusId, $search, $fromSql, $toSql)->get();
 
         $backendUsers = User::whereIn('role_id', [User::ROLE_ADMIN, User::ROLE_MANAGER, User::ROLE_ADVERTISER])
             ->get()
@@ -108,8 +111,8 @@ class JobController extends Controller
             'user_id'       => 0,
             'language_list' => $languages,
             'user_list'     => $backendUsers,
-            'from'          => $from,
-            'to'            => $to,
+            'from'          => $fromRaw,
+            'to'            => $toRaw,
             'search'        => $search,
             'activeSideMenu' => 'jobs',
         ]);
@@ -147,6 +150,7 @@ class JobController extends Controller
             $deleteInDays = max(1, (int) $request->input('delete_at', 30));
 
             $job = Job::create([
+                'job_no'          => '',
                 'title'           => $validated['title'],
                 'company_name'    => $validated['company_name'],
                 'description'     => $validated['description'],
@@ -162,8 +166,11 @@ class JobController extends Controller
                 'wage_type_id'    => $validated['wage_type_id'],
                 'trans_exp_id'    => $validated['trans_exp_id'],
                 'requirement'     => $validated['requirement'],
-                'apply_link'      => $request->input('apply_link', ''),
-                'img_link'        => $request->input('img_link', ''),
+                'apply_link'      => (string) $request->input('apply_link', ''),
+                'img_link'        => (string) $request->input('img_link', ''),
+                'img_path'        => '',
+                'img_name'        => '',
+                'img_ext'         => '',
                 'img_id'          => (int) $request->input('images_img_id', 0),
                 'featured'        => $request->has('featured') ? 1 : 0,
                 'send_email'      => $request->has('send_email') ? 1 : 0,
@@ -174,7 +181,7 @@ class JobController extends Controller
                 'job_status_id'   => Job::STATUS_PENDING,
             ]);
 
-            // Set job_no = id
+            // Set job_no = id (string representation of auto-increment)
             $job->update(['job_no' => (string) $job->id]);
 
             return redirect('/admin/jobs')->with('success', 'Job has been successfully created.');
@@ -242,13 +249,13 @@ class JobController extends Controller
                 'working_days'       => $validated['working_days'],
                 'wage'               => $validated['wage'],
                 'wage_type_id'       => $validated['wage_type_id'],
-                'wage_detail'        => $request->input('wage_detail', ''),
+                'wage_detail'        => (string) $request->input('wage_detail', ''),
                 'trans_exp_id'       => $validated['trans_exp_id'],
-                'transportation_detail' => $request->input('transportation_detail', ''),
-                'benefits'           => $request->input('benefits', ''),
+                'transportation_detail' => (string) $request->input('transportation_detail', ''),
+                'benefits'           => (string) $request->input('benefits', ''),
                 'requirement'        => $validated['requirement'],
-                'apply_link'         => $request->input('apply_link', ''),
-                'img_link'           => $request->input('img_link', ''),
+                'apply_link'         => (string) $request->input('apply_link', ''),
+                'img_link'           => (string) $request->input('img_link', ''),
                 'img_id'             => (int) $request->input('images_img_id', 0),
                 'featured'           => $request->has('featured') ? 1 : 0,
                 'send_email'         => $request->has('send_email') ? 1 : 0,
@@ -319,6 +326,7 @@ class JobController extends Controller
         $user = session('user');
 
         $clone = Job::create([
+            'job_no'          => '',
             'title'           => $original->title,
             'company_name'    => $original->company_name,
             'description'     => $original->description,
@@ -337,9 +345,12 @@ class JobController extends Controller
             'transportation_detail' => $original->transportation_detail,
             'benefits'        => $original->benefits,
             'requirement'     => $original->requirement,
-            'apply_link'      => $original->apply_link,
-            'img_link'        => $original->img_link,
-            'img_id'          => $original->img_id,
+            'apply_link'      => $original->apply_link ?? '',
+            'img_link'        => $original->img_link ?? '',
+            'img_path'        => $original->img_path ?? '',
+            'img_name'        => $original->img_name ?? '',
+            'img_ext'         => $original->img_ext ?? '',
+            'img_id'          => $original->img_id ?? 0,
             'featured'        => 0,
             'send_email'      => 0,
             'lang_id'         => $original->lang_id,
@@ -533,7 +544,7 @@ class JobController extends Controller
 
         for ($i = $start; $i <= $end; $i++) {
             if ($i === $currentPage) {
-                $html .= '<li class="active"><a href="javascript:void(0)">' . $i . '</a></li>';
+                $html .= '<li class="active"><span>' . $i . '</span></li>';
             } else {
                 $html .= '<li><a href="' . $baseUrl . '?page=' . $i . '">' . $i . '</a></li>';
             }
@@ -547,5 +558,24 @@ class JobController extends Controller
         $html .= '</ul>';
 
         return $html;
+    }
+
+    /**
+     * Convert dd/mm/yyyy or dd-mm-yyyy to Y-m-d. Returns null on invalid input.
+     * Replicates CI3's mysql_date() helper.
+     */
+    private function toMysqlDate(?string $date): ?string
+    {
+        if (!$date || $date === '') {
+            return null;
+        }
+        // Already Y-m-d?
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return $date;
+        }
+        // Replace slashes with dashes so strtotime interprets dd-mm-yyyy (European)
+        $normalized = str_replace('/', '-', $date);
+        $ts = strtotime($normalized);
+        return $ts ? date('Y-m-d', $ts) : null;
     }
 }

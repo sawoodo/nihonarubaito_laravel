@@ -13,12 +13,12 @@ class SitemapController extends Controller
         'tokyo', 'shinjuku', 'ikebukuro', 'shibuya',
         'kyoto', 'kyoto-kawaramachi',
         'hakata', 'tenjin',
-        'nagoya', 'Toyohashi', 'sakae',
-        'Utsunomiya', 'sendai', 'Hirose-dori',
+        'nagoya', 'toyohashi', 'sakae',
+        'utsunomiya', 'sendai', 'hirose-dori',
         'omiya', 'kawaguchi', 'kawasaki', 'yokohama',
         'sannomiya', 'himeji',
         'funabashi', 'matsudo', 'kashiwa',
-        'maebashi', 'gifu', 'hamamatsu', 'Shizuoka',
+        'maebashi', 'gifu', 'hamamatsu', 'shizuoka',
     ];
 
     public function xml()
@@ -59,9 +59,12 @@ class SitemapController extends Controller
         $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 
         // Static pages
-        $xml .= $this->urlEntry($baseUrl, null, '1.0', 'daily');
+        $xml .= $this->urlEntry("{$baseUrl}/", null, '1.0', 'daily');
         $xml .= $this->urlEntry("{$baseUrl}/subscribe", null, '0.3', 'monthly');
         $xml .= $this->urlEntry("{$baseUrl}/contact", null, '0.3', 'monthly');
+        $xml .= $this->urlEntry("{$baseUrl}/privacy-policy", null, '0.3', 'monthly');
+        $xml .= $this->urlEntry("{$baseUrl}/terms-of-service", null, '0.3', 'monthly');
+        $xml .= $this->urlEntry("{$baseUrl}/faq", null, '0.3', 'monthly');
 
         // Job detail pages
         foreach ($jobs as $job) {
@@ -76,15 +79,23 @@ class SitemapController extends Controller
             $xml .= $this->urlEntry("{$baseUrl}/{$catSlug}", null, '0.9', 'daily');
         }
 
-        // Prefecture + area pages
+        // Prefecture + area pages (global dedup to handle cross-prefecture name collisions)
+        $emittedSlugs = [];
         foreach ($areas as $prefKey => $locations) {
             $parts = explode('|', $prefKey);
-            $prefName = strtolower($parts[0]);
+            $prefSlug = strtolower($parts[0]);
 
-            $xml .= $this->urlEntry("{$baseUrl}/part-time-jobs-in-{$prefName}", null, '0.8', 'daily');
+            if (!isset($emittedSlugs[$prefSlug])) {
+                $emittedSlugs[$prefSlug] = true;
+                $xml .= $this->urlEntry("{$baseUrl}/part-time-jobs-in-{$prefSlug}", null, '0.8', 'daily');
+            }
 
             foreach ($locations as $area) {
                 $areaSlug = strtolower(str_replace(' ', '-', $area->area));
+                if (isset($emittedSlugs[$areaSlug])) {
+                    continue;
+                }
+                $emittedSlugs[$areaSlug] = true;
                 $xml .= $this->urlEntry("{$baseUrl}/part-time-jobs-in-{$areaSlug}", null, '0.7', 'daily');
             }
         }

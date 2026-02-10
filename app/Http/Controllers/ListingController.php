@@ -84,9 +84,10 @@ class ListingController extends Controller
             'page_title'      => $title,
             'og_title'        => $title,
             'og_description'  => 'Nihonarubaito is helping foreigners to get part-time jobs in japan, Jobs are in English, Vietnamese and Japanese find the best part-time job for you!',
-            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Resturant, Convenience Store) through japan\'s leading job site.',
+            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Restaurant, Convenience Store) through japan\'s leading job site.',
             'og_image'        => 'https://nihonarubaito.com/frontend/images/main-og-title.png',
-            'og_url'          => 'https://nihonarubaito.com',
+            'og_url'          => 'https://nihonarubaito.com/',
+            'canonical'       => 'https://nihonarubaito.com/',
             'keywords'        => 'Find Part time jobs in japan, Find Work in Japan, jobs Opportunities japan, Part time job portal in japan, Nihon Arubaito, Baito, Jobs for foreigners in japan',
             'active_nav'      => 'jobs',
         ]);
@@ -105,13 +106,26 @@ class ListingController extends Controller
         $areaId = (int) $request->input('area_id', 0);
         $categories = is_array($request->input('categories')) ? $request->input('categories') : [];
 
-        // 301 redirect: prefecture selected, no area, no query → prefecture page
-        if ($prefectureId > 0 && $areaId == 0 && $query === '') {
-            $pref = Prefecture::find($prefectureId);
-            if ($pref) {
-                $prefSlug = strtolower($pref->english);
-                return redirect("part-time-jobs-in-{$prefSlug}", 301);
+        // 301 redirect: empty query → clean URL (prevents duplicate content indexing)
+        if ($query === '') {
+            if ($prefectureId > 0 && $areaId > 0) {
+                // Empty query + prefecture + area → area page
+                $area = DB::table('areas')->where('id', $areaId)->first();
+                if ($area) {
+                    $areaSlug = strtolower(str_replace(' ', '-', $area->english));
+                    return redirect("part-time-jobs-in-{$areaSlug}", 301);
+                }
             }
+            if ($prefectureId > 0) {
+                // Empty query + prefecture (no area or area=0) → prefecture page
+                $pref = Prefecture::find($prefectureId);
+                if ($pref) {
+                    $prefSlug = strtolower($pref->english);
+                    return redirect("part-time-jobs-in-{$prefSlug}", 301);
+                }
+            }
+            // Empty query + no prefecture → main jobs page
+            return redirect('jobs', 301);
         }
 
         // Category mixing (bed making ↔ light work)
@@ -168,7 +182,7 @@ class ListingController extends Controller
             'page_title'      => $title,
             'og_title'        => $title,
             'og_description'  => 'Nihonarubaito is helping foreigners to get part-time jobs in japan, Jobs are in English, Vietnamese and Japanese find the best part-time job for you!',
-            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Resturant, Convenience Store) through japan\'s leading job site.',
+            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Restaurant, Convenience Store) through japan\'s leading job site.',
             'og_image'        => 'https://nihonarubaito.com/frontend/images/main-og-title.png',
             'og_url'          => 'https://nihonarubaito.com',
             'keywords'        => 'Find Part time jobs in japan, Find Work in Japan, jobs Opportunities japan, Part time job portal in japan, Nihon Arubaito, Baito, Jobs for foreigners in japan',
@@ -233,11 +247,20 @@ class ListingController extends Controller
             $popularAreas = $this->getPopularAreasForPrefecture($prefectureId, $langName);
         }
 
+        $isStationPage = isset($uri['preposition']) && $uri['preposition'] === 'at';
         $query = str_replace('-', ' ', $uri['query']);
         $uriLocation = isset($uri['location']) ? str_replace('-', ' ', $uri['location']) : '';
+
+        // For station pages, use the station query as the location for SEO
+        if ($isStationPage && empty($uriLocation)) {
+            $uriLocation = ucwords(str_replace('-', ' ', $uri['query']));
+        }
+
         $jobQuery = ucwords(str_replace('-', ' ', $uri['query']));
         $locationName = ucwords($uriLocation);
-        $title = "{$jobQuery} Jobs" . ($locationName ? " in {$locationName}" : '');
+        $title = $isStationPage
+            ? "Part-Time Jobs near {$locationName}"
+            : "{$jobQuery} Jobs" . ($locationName ? " in {$locationName}" : '');
 
         $page = max(1, $page ?? 1);
         $offset = ($page - 1) * self::PER_PAGE;
@@ -270,7 +293,9 @@ class ListingController extends Controller
             $popularLocations .= ', and more';
         }
 
-        $ogDescription = $this->generateMetaDescription($uriLocation, $query, self::STATION_MAP);
+        $ogDescription = $isStationPage
+            ? "Find flexible and high-paying part-time jobs near {$uriLocation} in Japan. Browse the latest listings and apply today with Nihon Arubaito!"
+            : $this->generateMetaDescription($uriLocation, $query, self::STATION_MAP);
         $keywords = "{$query} jobs in {$uriLocation}, part-time jobs, {$popularLocations}, jobs for foreigners";
 
         // Intro paragraph
@@ -486,7 +511,7 @@ class ListingController extends Controller
 
         for ($i = $start; $i <= $end; $i++) {
             if ($i === $currentPage) {
-                $html .= '<li class="active"><a href="javascript:void(0)">' . $i . '</a></li>';
+                $html .= '<li class="active"><span>' . $i . '</span></li>';
             } else {
                 $html .= '<li><a href="' . e($baseUrl) . '/' . $i . e($qs) . '">' . $i . '</a></li>';
             }

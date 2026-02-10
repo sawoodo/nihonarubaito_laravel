@@ -10,7 +10,7 @@
                     <div class="post-padding">
 
                         <div class="content-title">
-                            <h4>{{ $content->page_heading_label }}</h4>
+                            <h1 class="h4">{{ $content->page_heading_label }}</h1>
                             <hr>
                         </div>
 

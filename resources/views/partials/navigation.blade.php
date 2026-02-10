@@ -12,9 +12,7 @@
                     </button>
 
                     <a class="navbar-brand" href="{{ url('/') }}">
-                       <link rel="preload" as="image" type="image/webp" fetchpriority="high" href="{{ url('frontend/images/logo.webp') }}">
-
-
+                        <img src="{{ url('frontend/images/logo.webp') }}" alt="nihonarubaito" width="250" height="50" fetchpriority="high">
                     </a>
                 </div>
                 <!-- end navbar header -->

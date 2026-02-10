@@ -11,9 +11,9 @@
                     @php $img = $job->images_img_id ? "{$job->images_img_name}{$job->images_img_ext}" : "{$job->img_name}{$job->img_ext}" @endphp
 
                     @if ($img)
-                        <img src="{{ url("frontend/images/jobs/{$img}") }}" alt='job image' class="img-responsive img-thumbnail" />
+                        <img src="{{ url("frontend/images/jobs/{$img}") }}" alt='job image' class="img-responsive img-thumbnail" width="237" height="155" {!! isset($loop) && $loop->index < 3 ? '' : 'loading="lazy"' !!} />
                     @else
-                        <img src="{{ url("frontend/svgs/interview.svg") }}" alt='job image' class="img-responsive img-thumbnail" />
+                        <img src="{{ url("frontend/svgs/interview.svg") }}" alt='job image' class="img-responsive img-thumbnail" width="237" height="155" {!! isset($loop) && $loop->index < 3 ? '' : 'loading="lazy"' !!} />
                     @endif
                 </a>
             </div>

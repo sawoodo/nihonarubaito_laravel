@@ -21,6 +21,11 @@ class ApplicationLogController extends Controller
     {
         $this->authorizeAdmin();
 
+        // AJAX: DataTables JS POSTs to this URL
+        if ($request->ajax() || $request->wantsJson()) {
+            return $this->list($request);
+        }
+
         $today = now()->format('d/m/Y');
 
         return view('admin.application-logs.index', [
@@ -36,56 +41,63 @@ class ApplicationLogController extends Controller
         $from = $request->input('from');
         $to = $request->input('to');
 
-        $query = DB::table('application_logs as log')
+        $query = DB::table('jobs as j')
             ->select([
                 'log.*',
                 'j.title',
-                'c.english as category',
-                DB::raw("CONCAT(cu.first_name, ' ', cu.last_name) as created_by_name"),
-                DB::raw("CONCAT(uu.first_name, ' ', uu.last_name) as updated_by_name"),
+                'j.apply_link',
+                'jc.english as category',
+                DB::raw("CONCAT(created.first_name, ' ', created.last_name) as created_by_name"),
+                DB::raw("CONCAT(updated.first_name, ' ', updated.last_name) as updated_by_name"),
                 DB::raw('ROW_NUMBER() OVER (PARTITION BY log.job_no ORDER BY order_date) as apply_count'),
             ])
-            ->leftJoin('jobs as j', 'log.job_no', '=', 'j.job_no')
-            ->leftJoin('categories as c', 'j.job_category_id', '=', 'c.id')
-            ->leftJoin('users as cu', 'j.created_by', '=', 'cu.id')
-            ->leftJoin('users as uu', 'j.updated_by', '=', 'uu.id');
+            ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            ->join('application_logs as log', 'j.job_no', '=', 'log.job_no')
+            ->join('users as created', 'j.user_id', '=', 'created.id')
+            ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id');
 
         if ($from) {
             $fromDate = \Carbon\Carbon::createFromFormat('d/m/Y', $from)->format('Y-m-d');
-            $query->where('log.click_date', '>=', $fromDate);
+            $query->whereRaw('DATE(order_date) >= ?', [$fromDate]);
         }
         if ($to) {
             $toDate = \Carbon\Carbon::createFromFormat('d/m/Y', $to)->format('Y-m-d');
-            $query->where('log.click_date', '<=', $toDate);
+            $query->whereRaw('DATE(order_date) <= ?', [$toDate]);
         }
 
-        $logs = $query->orderByDesc('log.id')->get();
+        $logs = $query->orderByDesc('log.order_date')->get();
 
         $data = [];
         foreach ($logs as $log) {
-            $applyCountStyle = '';
-            if ($log->apply_count == 1) {
-                $applyCountStyle = 'color: green;';
-            } elseif ($log->apply_count == 2) {
-                $applyCountStyle = 'color: orange;';
-            } elseif ($log->apply_count >= 3) {
-                $applyCountStyle = 'color: red;';
+            $link = url("admin/jobs/{$log->job_no}/view");
+            $applyCount = (int) $log->apply_count;
+
+            $class = 'tw-px-4 tw-py-1 tw-rounded-full tw-shadow-lg ';
+            if ($applyCount === 1) {
+                $class .= 'tw-bg-emerald-500';
+            } elseif ($applyCount === 2) {
+                $class .= 'tw-bg-amber-400';
+            } else {
+                $class .= 'tw-bg-red-500';
             }
 
             $data[] = [
-                $log->job_no,
+                "<a href=\"{$link}\" class=\"btn btn-xs tw-btn-purple tip\" title=\"View\" target=\"blank\">{$log->job_no}</a>",
                 $log->merchant_name ?? '',
-                $log->click_date ?? '',
-                $log->order_date ?? '',
+                $log->click_date ? date('d-m-Y H:i:s', strtotime($log->click_date)) : '',
+                $log->order_date ? date('d-m-Y H:i:s', strtotime($log->order_date)) : '',
                 $log->title ?? '',
                 $log->category ?? '',
-                '<span style="' . $applyCountStyle . '">' . $log->apply_count . '</span>',
+                "<span class=\"{$class}\">{$log->apply_count}</span>",
                 $log->created_by_name ?? '',
                 $log->updated_by_name ?? '',
                 $log->apply_link ?? '',
             ];
         }
 
-        return response()->json(['data' => $data]);
+        return response()->json([
+            'recordsTotal' => count($logs),
+            'data' => $data,
+        ]);
     }
 }

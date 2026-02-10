@@ -11,7 +11,9 @@ class PageController extends Controller
     {
         return view('pages.contact', [
             'page_title'       => 'Jobs in Japan | nihonarubaito Contact Us Page',
-            'page_description' => 'Nihoarubaito contact Us page where you can enquire about latest jobs, add or update any jobs.',
+            'page_description' => 'Nihonarubaito contact us page where you can enquire about latest jobs, add or update any jobs.',
+            'canonical'        => 'https://nihonarubaito.com/contact',
+            'og_url'           => 'https://nihonarubaito.com/contact',
             'active_nav'       => 'contact',
         ]);
     }
@@ -47,9 +49,12 @@ class PageController extends Controller
 
     public function privacy()
     {
-        // CI3 doesn't set page_title/page_description for privacy page
-        // Falls back to $site_name / empty string via layout defaults
-        return view('pages.privacy');
+        return view('pages.privacy', [
+            'page_title'       => 'Privacy Policy | Nihonarubaito.com',
+            'page_description' => 'Nihonarubaito.com Privacy Policy - Learn how we collect, use and protect your personal information.',
+            'canonical'        => 'https://nihonarubaito.com/privacy-policy',
+            'og_url'           => 'https://nihonarubaito.com/privacy-policy',
+        ]);
     }
 
     public function about()
@@ -57,6 +62,8 @@ class PageController extends Controller
         return view('pages.about', [
             'page_title'       => 'About Us | Nihonarubaito.com',
             'page_description' => 'Learn about Nihonarubaito.com - a multilingual job search platform for part-time jobs in Japan.',
+            'canonical'        => 'https://nihonarubaito.com/about',
+            'og_url'           => 'https://nihonarubaito.com/about',
         ]);
     }
 
@@ -65,6 +72,8 @@ class PageController extends Controller
         return view('pages.faq', [
             'page_title'       => 'FAQ | Nihonarubaito.com',
             'page_description' => 'Frequently asked questions about Nihonarubaito.com - find answers about job search, applications, and accounts.',
+            'canonical'        => 'https://nihonarubaito.com/faq',
+            'og_url'           => 'https://nihonarubaito.com/faq',
         ]);
     }
 
@@ -73,6 +82,8 @@ class PageController extends Controller
         return view('pages.terms', [
             'page_title'       => 'Terms of Service | Nihonarubaito.com',
             'page_description' => 'Nihonarubaito.com Terms of Service - Read our terms and conditions for using the platform.',
+            'canonical'        => 'https://nihonarubaito.com/terms-of-service',
+            'og_url'           => 'https://nihonarubaito.com/terms-of-service',
         ]);
     }
 }

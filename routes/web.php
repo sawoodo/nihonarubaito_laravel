@@ -10,31 +10,33 @@ use App\Http\Controllers\SitemapController;
 use App\Http\Controllers\SubscribeController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
+// ── Homepage & Listing Pages (cache 30 min) ──
+Route::middleware('cache:1800')->group(function () {
+    Route::get('/', [ListingController::class, 'index'])->name('home');
+    Route::get('jobs', [ListingController::class, 'index'])->name('jobs.index');
+    Route::get('jobs/page/{page}', [ListingController::class, 'index'])->where('page', '[0-9]+');
 });
 
-// ── Phase 1: Static Pages ──
-Route::get('/about', [PageController::class, 'about'])->name('about');
+// ── Static Pages (cache 1 day) ──
+Route::middleware('cache:86400')->group(function () {
+    Route::get('/about', [PageController::class, 'about'])->name('about');
+    Route::get('/faq', [PageController::class, 'faq'])->name('faq');
+    Route::get('/privacy-policy', [PageController::class, 'privacy'])->name('privacy');
+    Route::get('/terms-of-service', [PageController::class, 'terms'])->name('terms');
+});
 Route::get('/contact', [PageController::class, 'contact'])->name('contact');
 Route::post('/contact', [PageController::class, 'contactSubmit']);
-Route::get('/faq', [PageController::class, 'faq'])->name('faq');
-Route::get('/privacy-policy', [PageController::class, 'privacy'])->name('privacy');
-Route::get('/terms-of-service', [PageController::class, 'terms'])->name('terms');
 
-// ── Phase 2: Job Detail Pages ──
-Route::get('jobs/{jobNo}/detail/{slug?}', [JobController::class, 'detail'])->name('job.detail');
+// ── Job Detail Pages (cache 1 hour) ──
+Route::get('jobs/{jobNo}/detail/{slug?}', [JobController::class, 'detail'])->name('job.detail')->middleware('cache:3600');
 Route::match(['get', 'post'], 'jobs/{jobNo}/apply-2nd-option', [JobController::class, 'applySecondary'])->name('job.apply-secondary');
 Route::get('job/link-sent', [JobController::class, 'linkSent'])->name('job.link-sent');
 
-// ── Phase 3: Listing Pages ──
-Route::get('jobs', [ListingController::class, 'index'])->name('jobs.index');
-Route::get('jobs/page/{page}', [ListingController::class, 'index'])->where('page', '[0-9]+');
-
-// ── Phase 4: Search & Sitemap ──
+// ── Search & Sitemap ──
 Route::get('jobs/search', [ListingController::class, 'search'])->name('jobs.search');
 Route::get('jobs/search/page/{page}', [ListingController::class, 'search'])->where('page', '[0-9]+');
 Route::get('sitemap.xml', [SitemapController::class, 'xml'])->name('sitemap.xml');
+Route::get('sitemap/xml', fn() => redirect('/sitemap.xml', 301));
 Route::post('jobs/areas/get', [ListingController::class, 'getAreas'])->name('jobs.areas.get');
 
 // ── Phase 5: Account, Subscribe & Language ──
@@ -53,6 +55,8 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('logout', [Admin\AuthController::class, 'logout'])->name('admin.logout');
 
     // Jobs
+    Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');
+    Route::post('jobs/create-from-xml/upload-file', [Admin\CreateJobFromXmlController::class, 'uploadFile'])->name('admin.jobs.create-from-xml.upload');
     Route::get('jobs/create', [Admin\JobController::class, 'create'])->name('admin.jobs.create');
     Route::post('jobs/create', [Admin\JobController::class, 'create']);
     Route::get('jobs/{jobNo}/edit', [Admin\JobController::class, 'edit'])->name('admin.jobs.edit');
@@ -67,10 +71,14 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('jobs/attach-image', [Admin\JobController::class, 'attachImage']);
     Route::post('jobs/detach-image', [Admin\JobController::class, 'detachImage']);
     Route::post('jobs/get-areas', [Admin\JobController::class, 'getAreas']);
+    // CI3-compatible aliases (JS uses these URL patterns)
+    Route::post('jobs/image/attach', [Admin\JobController::class, 'attachImage']);
+    Route::post('jobs/image/detach', [Admin\JobController::class, 'detachImage']);
+    Route::post('jobs/get_areas', [Admin\JobController::class, 'getAreas']);
     Route::get('jobs/unfeaturing', [Admin\JobController::class, 'unfeaturing']);
     Route::post('jobs/unfeature', [Admin\JobController::class, 'unfeature']);
     Route::post('jobs/{status}/search', [Admin\JobController::class, 'search']);
-    Route::get('jobs/{status?}/{langId?}/{userId?}', [Admin\JobController::class, 'index'])->name('admin.jobs.index');
+    Route::match(['get', 'post'], 'jobs/{status?}/{langId?}/{userId?}', [Admin\JobController::class, 'index'])->name('admin.jobs.index');
 
     // Subscribers (admin only)
     Route::get('subscribers', [Admin\SubscriberController::class, 'index'])->name('admin.subscribers.index');
@@ -101,6 +109,26 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('images/list', [Admin\ImageController::class, 'list'])->name('admin.images.list');
     Route::post('images/upload', [Admin\ImageController::class, 'upload'])->name('admin.images.upload');
     Route::post('images/{id}/update-info', [Admin\ImageController::class, 'updateInfo'])->name('admin.images.update-info');
+    Route::post('images/{id}/update', [Admin\ImageController::class, 'updateInfo']);
+
+    // FB Scheduled Posts (admin only)
+    Route::get('fb-scheduled-posts', [Admin\FbScheduledPostController::class, 'index'])->name('admin.fb-scheduled-posts.index');
+    Route::match(['get', 'post'], 'fb-scheduled-posts/{id}/edit', [Admin\FbScheduledPostController::class, 'edit'])->name('admin.fb-scheduled-posts.edit');
+    Route::get('fb-scheduled-posts/{id}/post', [Admin\FbScheduledPostController::class, 'postOnFb'])->name('admin.fb-scheduled-posts.post');
+
+    // Areas (admin only)
+    Route::get('areas', [Admin\AreaController::class, 'index'])->name('admin.areas.index');
+    Route::match(['get', 'post'], 'areas/{id}/edit', [Admin\AreaController::class, 'edit'])->name('admin.areas.edit');
+
+    // Works (admin only)
+    Route::get('works', [Admin\WorkController::class, 'index'])->name('admin.works.index');
+    Route::match(['get', 'post'], 'works/create', [Admin\WorkController::class, 'create'])->name('admin.works.create');
+    Route::match(['get', 'post'], 'works/{id}/edit', [Admin\WorkController::class, 'edit'])->name('admin.works.edit');
+
+    // Work Descriptions (admin only)
+    Route::get('work-descriptions', [Admin\WorkDescriptionController::class, 'index'])->name('admin.work-descriptions.index');
+    Route::match(['get', 'post'], 'work-descriptions/create', [Admin\WorkDescriptionController::class, 'create'])->name('admin.work-descriptions.create');
+    Route::match(['get', 'post'], 'work-descriptions/{id}/edit', [Admin\WorkDescriptionController::class, 'edit'])->name('admin.work-descriptions.edit');
 
     // Blog Posts (admin only)
     Route::get('blog-posts', [Admin\BlogPostController::class, 'index'])->name('admin.blog-posts.index');
@@ -112,6 +140,8 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::match(['get', 'post'], 'change-password', [Admin\PasswordController::class, 'edit'])->name('admin.change-password');
 });
 
-// Catch-all slug routes — MUST be at the very bottom of web.php
-Route::get('{slug}/page/{page}', [ListingController::class, 'bySlug'])->where(['slug' => '[a-z0-9-]+', 'page' => '[0-9]+']);
-Route::get('{slug}', [ListingController::class, 'bySlug'])->where('slug', '[a-z0-9-]+');
+// Catch-all slug routes (cache 30 min) — MUST be at the very bottom of web.php
+Route::middleware('cache:1800')->group(function () {
+    Route::get('{slug}/page/{page}', [ListingController::class, 'bySlug'])->where(['slug' => '[a-z0-9-]+', 'page' => '[0-9]+']);
+    Route::get('{slug}', [ListingController::class, 'bySlug'])->where('slug', '[a-z0-9-]+');
+});

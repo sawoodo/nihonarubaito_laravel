@@ -7,47 +7,61 @@
 
     <div class="row">
         <div class="col-md-12">
-            <h3 class="page-header">Secondary Applies</h3>
+            <h3 class="page-header tw-flex tw-justify-between tw-items-center">
+                Secondary Applies
+            </h3>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-3">
+    @include('partials.admin.flash-message')
+
+    <div class="row tw-flex tw-justify-center tw-mb-5">
+        <div class="col-md-2 text-center">
             <div class="form-group">
-                <label>From</label>
-                <input type="text" id="from" class="form-control input-sm datepicker" value="{{ $from }}">
+                <label for="from">From</label>
+                <input type="text" id="from" name="from" class="form-control input-sm text-center date" value="{{ $from }}">
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 text-center">
             <div class="form-group">
-                <label>To</label>
-                <input type="text" id="to" class="form-control input-sm datepicker" value="{{ $to }}">
+                <label for="to">To</label>
+                <input type="text" id="to" name="to" class="form-control input-sm text-center date" value="{{ $to }}">
             </div>
         </div>
     </div>
 
-    <div class="row">
+    <div class="row tw-mb-5">
         <div class="col-md-12">
-            <div class="table-responsive">
-                <table id="secondary-applies-table" class="table table-condensed table-bordered table-striped text-center">
-                    <thead>
-                        <tr>
-                            <th>Job No.</th>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Email</th>
-                            <th>Phone</th>
-                            <th>Apply Date</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
+            <table id="table" class="table table-bordered table-hover table-striped text-center">
+                <thead>
+                    <tr>
+                        <th class="col-md-1">Job No.</th>
+                        <th class="col-md-1">First Name</th>
+                        <th class="col-md-1">Last Name</th>
+                        <th class="col-md-1">Email</th>
+                        <th class="col-md-1">Phone</th>
+                        <th class="col-md-1">Apply Date</th>
+                    </tr>
+                    <tr>
+                        <th class="col-md-1">Job No.</th>
+                        <th class="col-md-1">First Name</th>
+                        <th class="col-md-1">Last Name</th>
+                        <th class="col-md-1">Email</th>
+                        <th class="col-md-1">Phone</th>
+                        <th class="col-md-1">Apply Date</th>
+                    </tr>
+                </thead>
+            </table>
         </div>
     </div>
 </div>
 @endsection
 
+@push('page-styles')
+<link href="{{ url('plugins/datepicker/datepicker3.css') }}" rel="stylesheet">
+@endpush
+
 @push('page-scripts')
+<script src="{{ url('plugins/datepicker/bootstrap-datepicker.js') }}"></script>
 <script src="{{ mix('/js/backend-app-pages/admin/secondary_applies/index.js') }}"></script>
 @endpush

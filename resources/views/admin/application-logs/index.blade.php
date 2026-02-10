@@ -26,25 +26,36 @@
         </div>
     </div>
 
-    <div class="row">
+    <div class="row tw-mb-5">
         <div class="col-md-12">
             <div class="table-responsive">
-                <table id="application-logs-table" class="table table-condensed table-bordered table-striped">
+                <table id="table" class="table table-bordered table-hover table-striped">
                     <thead>
                         <tr>
-                            <th>Job No.</th>
-                            <th>Merchant</th>
-                            <th>Click Date</th>
-                            <th>Order Date</th>
-                            <th>Title</th>
-                            <th>Category</th>
-                            <th>Apply Count</th>
-                            <th>Created By</th>
-                            <th>Updated By</th>
-                            <th>Link</th>
+                            <th class="col-md-1">Job No.</th>
+                            <th class="col-md-1">Merchant</th>
+                            <th class="col-md-1">Click Date</th>
+                            <th class="col-md-1">Order Date</th>
+                            <th class="col-md-1">Title</th>
+                            <th class="col-md-1">Category</th>
+                            <th class="col-md-1">Apply Count</th>
+                            <th class="col-md-1">Created By</th>
+                            <th class="col-md-1">Updated By</th>
+                            <th class="col-md-1">Link</th>
+                        </tr>
+                        <tr>
+                            <th class="col-md-1">Job No.</th>
+                            <th class="col-md-1">Merchant</th>
+                            <th class="col-md-1">Click Date</th>
+                            <th class="col-md-1">Order Date</th>
+                            <th class="col-md-1">Title</th>
+                            <th class="col-md-1">Category</th>
+                            <th class="col-md-1">Apply Count</th>
+                            <th class="col-md-1">Created By</th>
+                            <th class="col-md-1">Updated By</th>
+                            <th class="col-md-1">Link</th>
                         </tr>
                     </thead>
-                    <tbody></tbody>
                 </table>
             </div>
         </div>
@@ -52,6 +63,11 @@
 </div>
 @endsection
 
+@push('page-styles')
+    <link href="{{ url('plugins/datepicker/datepicker3.css') }}" rel="stylesheet">
+@endpush
+
 @push('page-scripts')
-<script src="{{ mix('/js/backend-app-pages/admin/application_logs/index.js') }}"></script>
+    <script src="{{ url('plugins/datepicker/bootstrap-datepicker.js') }}"></script>
+    <script src="{{ mix('/js/backend-app-pages/admin/application_logs/index.js') }}"></script>
 @endpush

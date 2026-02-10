@@ -34,6 +34,13 @@
                                     </div>
 
                                 </div> -->
+
+                                <div style="margin-top: 15px;">
+                                    <a href="{{ url('privacy-policy') }}">Privacy Policy</a> &middot;
+                                    <a href="{{ url('terms-of-service') }}">Terms of Service</a> &middot;
+                                    <a href="{{ url('faq') }}">FAQ</a> &middot;
+                                    <a href="{{ url('contact') }}">Contact</a>
+                                </div>
                             </div>
                         </div>
 

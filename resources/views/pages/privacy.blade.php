@@ -6,84 +6,81 @@
 
             <div class="row">
                 <div class="col-md-12">
-                    <h3 class="page-header text-center">Nihonarubaito.com Privacy Policy</h3>
+                    <h1 class="page-header text-center h3">Privacy Policy</h1>
                 </div>
             </div>
 
-			<div class="row">
-				<div class="col-md-10 col-md-offset-1">
-					<h3>Introduction:</h3>
+            <div class="row">
+                <div class="col-md-10 col-md-offset-1">
 
-					<p>
-						At Nihonarubaito.com, we take the privacy of our users very seriously. This Privacy Policy outlines the information we collect and how it is used, as well as your rights regarding your personal data. By using Nihonarubaito.com, you consent to the collection, use and disclosure of your personal information as described in this Privacy Policy.
-					</p>
+                    <p><em>Last updated: February 2026</em></p>
 
-					<h3>Information We Collect:</h3>
+                    <h3>Introduction</h3>
+                    <p>
+                        At Nihonarubaito.com, we respect your privacy. This Privacy Policy explains what information we collect when you visit our website and how we use it. By using Nihonarubaito.com, you consent to the practices described in this policy.
+                    </p>
 
-					<p>We collect information from you in several ways when you use Nihonarubaito.com, including:</p>
+                    <h3>Information We Collect</h3>
+                    <p>Nihonarubaito.com is a free job information platform. We collect minimal data:</p>
+                    <ul>
+                        <li><strong>Analytics data:</strong> We use Google Analytics to understand how visitors use our site. This collects anonymized data such as pages visited, time spent on the site, browser type, and approximate geographic location.</li>
+                        <li><strong>Cookies:</strong> We use cookies for Google Analytics tracking and Google Ads (AdSense) to display relevant advertisements. These cookies help measure ad performance and provide personalized ads based on your browsing activity.</li>
+                        <li><strong>Contact form submissions:</strong> If you use our <a href="{{ url('contact') }}">contact form</a>, we collect your name, email address, and message content to respond to your inquiry.</li>
+                        <li><strong>Subscription data:</strong> If you subscribe to job alerts, we collect your email address and job preferences to send you relevant notifications.</li>
+                    </ul>
 
-					<ul>
-						<li>Personal information you provide when creating an account, such as your name, email address, and password.</li>
-						<li>Information you provide when posting a job listing, such as job title, location, and description.</li>
-						<li>Information you provide when applying for a job, such as your resume, cover letter, and contact information.</li>
-						<li>Information we collect through cookies and similar technologies to help us understand how you interact with Nihonarubaito.com.</li>
-					</ul>
+                    <h3>How We Use Your Information</h3>
+                    <ul>
+                        <li>To provide and improve our job listing services</li>
+                        <li>To analyze website traffic and usage patterns via Google Analytics</li>
+                        <li>To display relevant advertisements via Google Ads (AdSense)</li>
+                        <li>To respond to inquiries submitted through the contact form</li>
+                        <li>To send job alert emails to subscribers</li>
+                    </ul>
 
-					<h3>How We Use Your Information:</h3>
+                    <h3>Third-Party Services</h3>
+                    <p>We use the following third-party services that may collect data:</p>
+                    <ul>
+                        <li><strong>Google Analytics:</strong> Collects anonymized usage data to help us understand site traffic. <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a></li>
+                        <li><strong>Google Ads (AdSense):</strong> Displays advertisements and may use cookies to personalize ads. <a href="https://policies.google.com/technologies/ads" target="_blank" rel="noopener">How Google uses cookies in advertising</a></li>
+                    </ul>
 
-					<p>We use the information we collect for the following purposes:</p>
+                    <h3>Cookies</h3>
+                    <p>
+                        Cookies are small text files stored on your device. We use cookies for analytics and advertising purposes. You can control or disable cookies through your browser settings. Disabling cookies may affect the functionality of some features on our site.
+                    </p>
 
-					<ul>
-						<li>To provide, maintain, and improve our services, including job listings and job matching.</li>
-						<li>
-							To communicate with you, such as responding to your support requests and sending you notifications about new job listings that match your preferences.
-						</li>
-						<li>To personalize your experience, such as recommending job listings that may be of interest to you.</li>
-						<li>
-							To comply with legal obligations, such as verifying your identity and complying with anti-fraud and anti-money laundering regulations.
-						</li>
-					</ul>
+                    <h3>Data Sharing</h3>
+                    <p>
+                        We do not sell, rent, or share your personal information with third parties, except as required by law or as described in this policy (i.e., through Google Analytics and Google Ads).
+                    </p>
 
-					<h3>Disclosure of Your Information:</h3>
+                    <h3>Data Retention</h3>
+                    <p>
+                        Contact form messages and subscription data are retained for as long as necessary to provide our services. You can request deletion of your data by contacting us.
+                    </p>
 
-					<p>
-						We will not sell, rent or lease your personal information to third parties. However, we may disclose your information to third parties in the following circumstances:
-					</p>
+                    <h3>Your Rights</h3>
+                    <p>You have the right to:</p>
+                    <ul>
+                        <li>Request access to the personal data we hold about you</li>
+                        <li>Request correction or deletion of your personal data</li>
+                        <li>Opt out of Google Analytics tracking by installing the <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">Google Analytics Opt-out Browser Add-on</a></li>
+                        <li>Manage your ad personalization settings at <a href="https://adssettings.google.com" target="_blank" rel="noopener">Google Ads Settings</a></li>
+                    </ul>
 
-					<ul>
-						<li>
-							To our service providers and partners, who help us provide and improve our services, such as hosting, analytics, and payment processing.
-						</li>
-						<li>To comply with legal obligations, such as responding to a subpoena or court order.</li>
-						<li>
-							To enforce our policies, or to protect the rights, property, or safety of Nihonarubaito.com, its users, or others.
-						</li>
-					</ul>
+                    <h3>Changes to This Policy</h3>
+                    <p>
+                        We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated revision date.
+                    </p>
 
-					<h3>Data Retention:</h3>
+                    <h3>Contact Us</h3>
+                    <p>
+                        If you have any questions about this Privacy Policy, please <a href="{{ url('contact') }}">contact us</a> or email us at support@nihonarubaito.com.
+                    </p>
 
-					<p>
-						We will retain your information for as long as needed to provide you with our services, comply with our legal obligations, and resolve disputes.
-					</p>
-
-					<h3>Your Rights:</h3>
-
-					<p>
-						You have the right to request access to and correction of your personal information, as well as the right to request deletion of your personal information. You also have the right to object to the processing of your personal information, and the right to request the transfer of your personal information to another entity.
-					</p>
-
-					<h3>Changes to This Privacy Policy:</h3>
-
-					<p>
-						We may update this Privacy Policy from time to time to reflect changes to our practices or legal requirements. We will notify you of any material changes by posting the updated Privacy Policy on our website.
-					</p>
-
-					<h3>Contact Us:</h3>
-
-					<p>
-						If you have any questions or concerns about our Privacy Policy or the information we collect, please contact us at support@nihonarubaito.com.
-					</p>
-			</div>
+                </div>
+            </div>
         </div>
     </div>
 @endsection

@@ -1,0 +1,98 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 1) Enable rewriting
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteEngine On
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) FORCE HTTPS: any request not already on HTTPS jumps to the HTTPS URL
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3) FACEBOOK CRAWLER MANAGEMENT - Allow but with rate limiting
+# ─────────────────────────────────────────────────────────────────────────────
+# Identify Facebook crawler
+SetEnvIf User-Agent "facebookexternalhit" facebook_bot
+SetEnvIf User-Agent "Facebot" facebook_bot
+SetEnvIf User-Agent "facebookcatalog" facebook_bot
+
+# Apply rate limiting to Facebook crawler
+<IfModule mod_ratelimit.c>
+    <If "%{ENV:facebook_bot} == '1'">
+        SetOutputFilter RATE_LIMIT
+        SetEnv rate-limit 400
+    </If>
+</IfModule>
+
+# Cache Facebook crawler responses for 30 days
+<IfModule mod_headers.c>
+    <If "%{ENV:facebook_bot} == '1'">
+        Header set Cache-Control "public, max-age=2592000, immutable"
+        Header set X-Robots-Tag "noindex, nofollow"
+    </If>
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4) BLOCK AGGRESSIVE/MALICIOUS CRAWLERS
+# ─────────────────────────────────────────────────────────────────────────────
+# Block Buck - Facebook internal tool that was hitting too hard
+RewriteCond %{HTTP_USER_AGENT} Buck/2.3.2 [NC]
+RewriteRule .* - [F,L]
+
+# Block ghost-rider referrer spam
+RewriteCond %{HTTP_REFERER} ghost-rider [NC]
+RewriteRule ^ - [F]
+
+# Block other bad user agents
+SetEnvIfNoCase User-Agent "curl" BADUA=1
+SetEnvIfNoCase User-Agent "wget" BADUA=1
+SetEnvIfNoCase User-Agent "python-requests" BADUA=1
+SetEnvIfNoCase User-Agent "libwww" BADUA=1
+SetEnvIfNoCase User-Agent "MJ12bot" BADUA=1
+SetEnvIfNoCase User-Agent "SemrushBot" BADUA=1
+SetEnvIfNoCase User-Agent "AhrefsBot" BADUA=1
+
+<RequireAll>
+    Require all granted
+    Require not env BADUA
+</RequireAll>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ── LARAVEL CUTOVER ──
+# To rollback: comment out or remove this block
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteCond %{REQUEST_URI} !^/laravel/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /laravel/public/index.php [L]
+# ── END LARAVEL CUTOVER ──
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5) CodeIgniter front controller - bypassed by Laravel cutover above
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php/$1 [L]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6) PHP handler
+# ─────────────────────────────────────────────────────────────────────────────
+AddHandler application/x-httpd-php82 .php .php5 .php4 .php3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7) Prevent caching of critical files
+# ─────────────────────────────────────────────────────────────────────────────
+<Files "robots.txt">
+    Header set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+    Header set X-SG-Exclude-Cache "1"
+</Files>
+
+<FilesMatch "sitemap\.xml$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+    Header set X-SG-Exclude-Cache "1"
+</FilesMatch>

@@ -21,8 +21,13 @@ class SecondaryApplyController extends Controller
     {
         $this->authorizeAdmin();
 
-        $from = $request->input('from', now()->startOfMonth()->format('d/m/Y'));
-        $to = $request->input('to', now()->format('d/m/Y'));
+        // AJAX: DataTables JS POSTs to this URL
+        if ($request->ajax() || $request->wantsJson()) {
+            return $this->list($request);
+        }
+
+        $from = now()->startOfMonth()->format('d/m/Y');
+        $to = now()->format('d/m/Y');
 
         return view('admin.secondary-applies.index', [
             'activeSideMenu' => 'secondary_applies',
@@ -39,37 +44,35 @@ class SecondaryApplyController extends Controller
         $to = $request->input('to');
 
         $query = DB::table('secondary_applies as sa')
-            ->select([
-                'sa.id', 'sa.job_no', 'sa.first_name', 'sa.last_name',
-                'sa.email', 'sa.phone', 'sa.created_at as apply_date',
-                'j.title',
-            ])
-            ->leftJoin('jobs as j', 'sa.job_no', '=', 'j.job_no')
+            ->select(['sa.*', 'j.title'])
+            ->join('jobs as j', 'j.job_no', '=', 'sa.job_no')
             ->orderByDesc('sa.id');
 
-        if ($from) {
+        if ($from && $to) {
             $fromDate = \Carbon\Carbon::createFromFormat('d/m/Y', $from)->format('Y-m-d');
-            $query->where('sa.created_at', '>=', $fromDate);
-        }
-        if ($to) {
             $toDate = \Carbon\Carbon::createFromFormat('d/m/Y', $to)->format('Y-m-d');
-            $query->where('sa.created_at', '<=', $toDate . ' 23:59:59');
+            $query->whereRaw("DATE(apply_date) BETWEEN ? AND ?", [$fromDate, $toDate]);
         }
 
         $applies = $query->get();
 
         $data = [];
         foreach ($applies as $apply) {
+            $link = url("admin/jobs/{$apply->job_no}/view");
+
             $data[] = [
-                '<a href="' . url("admin/jobs/{$apply->job_no}/view") . '">' . $apply->job_no . '</a>',
+                "<a href=\"{$link}\" class=\"btn btn-xs tw-btn-purple tip\" title=\"View\" target=\"blank\">{$apply->job_no}</a>",
                 $apply->first_name ?? '',
                 $apply->last_name ?? '',
                 $apply->email ?? '',
                 $apply->phone ?? '',
-                $apply->apply_date ? \Carbon\Carbon::parse($apply->apply_date)->format('d-m-Y') : '',
+                $apply->apply_date ? date('d-m-Y', strtotime($apply->apply_date)) : '',
             ];
         }
 
-        return response()->json(['data' => $data]);
+        return response()->json([
+            'recordsTotal' => count($applies),
+            'data' => $data,
+        ]);
     }
 }

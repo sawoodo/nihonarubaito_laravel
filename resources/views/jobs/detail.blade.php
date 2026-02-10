@@ -33,9 +33,9 @@
                                                                 : "{$job->img_name}{$job->img_ext}";
                                                         @endphp
                                                         @if ($img)
-                                                            <img src="{{ url("frontend/images/jobs/{$img}") }}" loading="lazy" alt="{{ $job->title }}" width="100" height="180">
+                                                            <img src="{{ url("frontend/images/jobs/{$img}") }}" alt="{{ $job->title }}" width="237" height="155">
                                                         @else
-                                                            <img src="{{ url("frontend/svgs/interview.svg") }}" alt="{{ $job->title }}" width="100" height="180">
+                                                            <img src="{{ url("frontend/svgs/interview.svg") }}" alt="{{ $job->title }}" width="237" height="155">
                                                         @endif
                                                     </div>
 
