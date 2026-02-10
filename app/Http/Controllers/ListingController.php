@@ -274,6 +274,40 @@ class ListingController extends Controller
         // Blog post matching this slug
         $blogPost = BlogPost::where('slug', $slug)->where('lang_id', $langId)->first();
 
+        // Nearby prefectures (only for prefecture pages, not station/area pages)
+        $neighbors = collect();
+        if ($prefecture) {
+            $neighbors = DB::table('prefecture_neighbors')
+                ->where('prefecture_slug', $slug)
+                ->orderBy('sort_order')
+                ->get()
+                ->map(function ($n) {
+                    $name = str_replace('part-time-jobs-in-', '', $n->neighbor_slug);
+                    return (object) [
+                        'slug' => $n->neighbor_slug,
+                        'name' => ucwords(str_replace('-', ' ', $name)),
+                    ];
+                });
+        }
+
+        // FAQ extraction for structured data
+        $faqItems = [];
+        if ($blogPost && str_contains($blogPost->post ?? '', 'Frequently Asked Questions')) {
+            preg_match_all('/<h3[^>]*>(.*?)<\/h3>\s*<p[^>]*>(.*?)<\/p>/s', $blogPost->post, $matches);
+            $inFaq = false;
+            foreach ($matches[1] as $i => $question) {
+                $q = strip_tags(html_entity_decode($question));
+                $a = strip_tags(html_entity_decode($matches[2][$i]));
+                if (str_contains($q, 'Frequently Asked') || str_contains($q, 'FAQ')) {
+                    $inFaq = true;
+                    continue;
+                }
+                if ($inFaq && strlen($q) > 10 && str_contains($q, '?')) {
+                    $faqItems[] = ['question' => $q, 'answer' => $a];
+                }
+            }
+        }
+
         // Prefecture dropdown
         $prefectures = $this->getPrefectureDropdown($langName);
 
@@ -351,6 +385,9 @@ class ListingController extends Controller
             'structured_data'  => $structuredData,
             'breadcrumb'       => $breadcrumb,
             'active_nav'       => 'jobs',
+            'neighbors'        => $neighbors,
+            'faq_items'        => $faqItems,
+            'prefecture_name'  => $prefecture ? $prefecture->english : null,
         ]);
     }
 

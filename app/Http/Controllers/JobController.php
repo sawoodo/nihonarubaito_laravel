@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Area;
 use App\Models\Job;
 use App\Models\Language;
+use App\Models\Prefecture;
 use App\Models\SecondaryApply;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -18,20 +20,30 @@ class JobController extends Controller
             return redirect("jobs/{$jobNo}/apply");
         }
 
-        // Get job's lang_id
-        $selectedJobLangId = Job::where('job_no', $jobNo)->value('lang_id');
+        // Get job's lang_id and status early (before language redirect)
+        $jobBasic = Job::where('job_no', $jobNo)->select('lang_id', 'job_status_id')->first();
 
-        if (!$selectedJobLangId) {
+        if (!$jobBasic) {
             abort(404);
+        }
+
+        // Pending/Draft → 404 (check before language redirect to avoid loops)
+        if (in_array((int) $jobBasic->job_status_id, [Job::STATUS_PENDING, Job::STATUS_DRAFT])) {
+            abort(404);
+        }
+
+        // Expired/Trashed → 3-tier lifecycle (check before language redirect to avoid loops)
+        if (in_array((int) $jobBasic->job_status_id, [Job::STATUS_EXPIRED, Job::STATUS_TRASHED])) {
+            return $this->handleExpiredJob($jobNo);
         }
 
         // If user's session lang differs from job's lang, switch and redirect
         $currentLangId = session('user_lang', 1);
-        if ((int) $currentLangId !== (int) $selectedJobLangId) {
-            $lang = Language::find($selectedJobLangId);
+        if ((int) $currentLangId !== (int) $jobBasic->lang_id) {
+            $lang = Language::find($jobBasic->lang_id);
             if ($lang) {
                 session([
-                    'user_lang' => $selectedJobLangId,
+                    'user_lang' => $jobBasic->lang_id,
                     'lang_name' => strtolower($lang->english),
                 ]);
             }
@@ -50,11 +62,6 @@ class JobController extends Controller
             abort(404);
         }
 
-        // Pending/Draft → 404
-        if ((int) $job->job_status_id === Job::STATUS_PENDING || (int) $job->job_status_id === Job::STATUS_DRAFT) {
-            abort(404);
-        }
-
         // Fetch 10 related jobs (same prefecture, published, exclude current, newest first)
         $relatedJobs = Job::withLocalizedNames($langName)
             ->where('jobs.job_status_id', Job::STATUS_PUBLISHED)
@@ -63,17 +70,6 @@ class JobController extends Controller
             ->orderBy('jobs.id', 'desc')
             ->limit(10)
             ->get();
-
-        // Expired/Trashed → 410 Gone
-        if (in_array((int) $job->job_status_id, [Job::STATUS_EXPIRED, Job::STATUS_TRASHED])) {
-            return response()
-                ->view('jobs.expired', [
-                    'job' => $job,
-                    'related_jobs' => $relatedJobs,
-                    'page_title' => 'Job Expired | Nihon Arubaito',
-                ], 410)
-                ->header('Cache-Control', 'public, max-age=2592000');
-        }
 
         // Active job (status 3) or Quota Full (status 6) → 200
         $jobSlug = Str::slug(strtolower("{$langName}-{$job->title}"));
@@ -144,6 +140,90 @@ class JobController extends Controller
     public function linkSent()
     {
         return view('jobs.link-sent');
+    }
+
+    /**
+     * 3-tier expired job lifecycle:
+     *   Tier 1 (0-90 days):   200 + noindex + related jobs
+     *   Tier 2 (91-365 days): 301 redirect to area/prefecture page
+     *   Tier 3 (365+ days):   410 Gone
+     */
+    private function handleExpiredJob(string $jobNo)
+    {
+        $langName = session('lang_name', 'english');
+        $job = Job::withLocalizedNames($langName)
+            ->where('jobs.job_no', $jobNo)
+            ->first();
+
+        if (!$job) {
+            abort(410);
+        }
+
+        // Calculate days since expiration: prefer Expire_Date, fallback to updated_at, then date
+        // Use startOfDay() to match SQL DATEDIFF behavior (count calendar day boundaries)
+        $expiredDate = $job->Expire_Date ?? $job->updated_at ?? $job->date;
+        $daysSinceExpired = $expiredDate
+            ? (int) abs(now()->startOfDay()->diffInDays($expiredDate->copy()->startOfDay()))
+            : 999;
+
+        // TIER 1: Recently expired (0-90 days) → 200 + noindex + related jobs
+        if ($daysSinceExpired <= 90) {
+            $relatedJobs = Job::withLocalizedNames($langName)
+                ->where('jobs.job_status_id', Job::STATUS_PUBLISHED)
+                ->where('jobs.prefecture_id', $job->prefecture_id)
+                ->where('jobs.id', '!=', $job->id)
+                ->orderBy('jobs.id', 'desc')
+                ->limit(8)
+                ->get();
+
+            // If not enough from same prefecture, fill with any active jobs
+            if ($relatedJobs->count() < 4) {
+                $excludeIds = $relatedJobs->pluck('id')->push($job->id)->toArray();
+                $moreJobs = Job::withLocalizedNames($langName)
+                    ->where('jobs.job_status_id', Job::STATUS_PUBLISHED)
+                    ->whereNotIn('jobs.id', $excludeIds)
+                    ->orderBy('jobs.id', 'desc')
+                    ->limit(8 - $relatedJobs->count())
+                    ->get();
+                $relatedJobs = $relatedJobs->merge($moreJobs);
+            }
+
+            $prefectureName = $job->prefecture_name ?? '';
+            $prefectureSlug = $prefectureName ? strtolower(str_replace(' ', '-', $prefectureName)) : '';
+
+            return response()
+                ->view('jobs.expired', [
+                    'job' => $job,
+                    'related_jobs' => $relatedJobs,
+                    'page_title' => 'Job Expired | Nihon Arubaito',
+                    'prefecture_name' => $prefectureName,
+                    'prefecture_slug' => $prefectureSlug,
+                    'noindex' => true,
+                ], 200);
+        }
+
+        // TIER 2: Old expired (91-365 days) → 301 redirect to area/prefecture page
+        if ($daysSinceExpired <= 365) {
+            // Try area page first
+            if ($job->area_id) {
+                $area = Area::find($job->area_id);
+                if ($area) {
+                    return redirect('/part-time-jobs-in-' . $area->slug, 301);
+                }
+            }
+            // Fallback to prefecture page
+            if ($job->prefecture_id) {
+                $prefecture = Prefecture::find($job->prefecture_id);
+                if ($prefecture) {
+                    return redirect('/part-time-jobs-in-' . $prefecture->slug, 301);
+                }
+            }
+            // Ultimate fallback
+            return redirect('/', 301);
+        }
+
+        // TIER 3: Very old (365+ days) → 410 Gone
+        abort(410);
     }
 
     private function createSchema(Job $job): string

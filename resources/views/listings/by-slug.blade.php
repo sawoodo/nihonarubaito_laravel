@@ -65,6 +65,15 @@
                 <a href="#" class="btn btn-primary" id="loadMore">{{ $content->btn_load_more_label }}</a>
             </div>
 
+            {{-- Subscribe CTA for empty prefecture pages --}}
+            @if (isset($jobs) && $jobs->isEmpty() && isset($prefecture_name) && $prefecture_name)
+                <div style="margin: 30px 0; padding: 25px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; text-align: center; color: white;" class="subscribe-cta">
+                    <h3 style="margin: 0 0 10px 0; color: white; font-size: 1.3em;">No part-time jobs in {{ $prefecture_name }} right now</h3>
+                    <p style="margin: 0 0 15px 0; opacity: 0.9;">New jobs are added daily. Subscribe to get notified when positions open up in {{ $prefecture_name }}.</p>
+                    <a href="/subscribe" style="display: inline-block; padding: 12px 30px; background: white; color: #667eea; border-radius: 25px; text-decoration: none; font-weight: bold;">Subscribe for Updates</a>
+                </div>
+            @endif
+
             @if (isset($blog_post) && $blog_post)
                 <div class="row tw-mt-8">
                     <div class="col-md-12 tw-mt-8">
@@ -79,6 +88,20 @@
                 </div>
             @endif
 
+            {{-- Nearby prefectures navigation --}}
+            @if (isset($neighbors) && count($neighbors) > 0)
+                <div class="nearby-prefectures" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                    <h3>Explore Jobs in Nearby Prefectures</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                        @foreach ($neighbors as $neighbor)
+                            <a href="/{{ $neighbor->slug }}" style="display: inline-block; padding: 8px 16px; background: #fff; border: 1px solid #ddd; border-radius: 20px; text-decoration: none; color: #333;">
+                                {{ $neighbor->name }}
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
         </div>
     </div>
 
@@ -88,6 +111,25 @@
 
     <input type="hidden" id="select_prefecture_first_label_text" value="{{ $content->select_prefecture_first_label ?? 'Select prefecture first' }}">
 @endsection
+
+@if (isset($faq_items) && count($faq_items) > 0)
+    @push('structured-data')
+        <script type="application/ld+json">
+        {!! json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'FAQPage',
+            'mainEntity' => array_map(fn($faq) => [
+                '@type' => 'Question',
+                'name' => $faq['question'],
+                'acceptedAnswer' => [
+                    '@type' => 'Answer',
+                    'text' => $faq['answer'],
+                ],
+            ], $faq_items),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) !!}
+        </script>
+    @endpush
+@endif
 
 @push('page-scripts')
     <script src="{{ mix('js/frontend-app-pages/home/index.js') }}"></script>

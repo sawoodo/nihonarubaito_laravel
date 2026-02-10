@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Image;
+use App\Models\FbPost;
 use App\Models\Job;
 use App\Models\Language;
 use App\Models\Prefecture;
@@ -274,6 +275,8 @@ class JobController extends Controller
 
             // Update & Publish
             if ($request->input('update_and_publish')) {
+                $freshJob = Job::where('job_no', $jobNo)->first();
+                $this->createFbPost($freshJob);
                 Job::where('job_no', $jobNo)->update(['job_status_id' => Job::STATUS_PUBLISHED]);
                 return redirect('/admin/jobs')->with('success', 'Job has been updated and published.');
             }
@@ -379,9 +382,42 @@ class JobController extends Controller
             return redirect('/admin/jobs')->with('error', 'Please set the area before publishing.');
         }
 
+        $this->createFbPost($job);
         $job->update(['job_status_id' => Job::STATUS_PUBLISHED]);
 
         return redirect('/admin/jobs')->with('success', 'Job has been published.');
+    }
+
+    private function createFbPost($job): void
+    {
+        // Only English jobs get Facebook posts (lang_id = 1)
+        if ((int) $job->lang_id !== 1) {
+            return;
+        }
+
+        $applyLink = url("jobs/{$job->job_no}/detail");
+        $note = "Note: If you are interested, please go to the link of the job carefully and confirm details such as the workplace, payment, interview condition, shifts etc.";
+
+        $content = "{$job->title}\r\n{$job->description}\r\n{$job->wage}{$job->wage_detail}\r\n{$job->station}\r\n{$job->working_hours}\r\n{$job->working_days}\r\nCheck Job Detail: {$applyLink}\r\n{$note}";
+
+        // Schedule: 15 min after last post, or 3 hours ago if no recent posts
+        $lastPost = FbPost::orderByDesc('id')->first();
+        $now = now();
+
+        if ($lastPost && $now->diffInDays($lastPost->created_at) === 0) {
+            $scheduledAt = \Carbon\Carbon::parse($lastPost->scheduled_at)->addMinutes(15)->format('Y-m-d H:i:s');
+        } else {
+            $scheduledAt = $now->subHours(3)->format('Y-m-d H:i:s');
+        }
+
+        FbPost::create([
+            'content'      => $content,
+            'lang_id'      => $job->lang_id,
+            'link'         => $applyLink,
+            'published'    => false,
+            'created_at'   => date('Y-m-d H:i:s'),
+            'scheduled_at' => $scheduledAt,
+        ]);
     }
 
     public function draft(string $jobNo)
