@@ -13,7 +13,7 @@ class ImageController extends Controller
     {
         // JS gallery modal calls GET admin/images expecting JSON
         if ($request->ajax() || $request->wantsJson()) {
-            $images = Image::orderByDesc('id')->limit(100)->get();
+            $images = Image::orderByDesc('id')->get();
 
             $data = [];
             foreach ($images as $img) {
@@ -30,7 +30,7 @@ class ImageController extends Controller
         }
 
         // Server-side rendered gallery
-        $images = Image::orderByDesc('id')->limit(200)->get();
+        $images = Image::orderByDesc('id')->get();
 
         return view('admin.images.index', [
             'activeSideMenu' => 'images',
