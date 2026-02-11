@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\FbPost;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -37,10 +38,10 @@ class FbScheduledPostController extends Controller
             $query->where('fb_posts.content', 'like', "%{$q}%");
         }
         if ($createdAt) {
-            $query->whereDate('fb_posts.created_at', $createdAt);
+            $query->whereDate('fb_posts.created_at', $this->parseDatepickerDate($createdAt));
         }
         if ($scheduledAt) {
-            $query->whereDate('fb_posts.scheduled_at', $scheduledAt);
+            $query->whereDate('fb_posts.scheduled_at', $this->parseDatepickerDate($scheduledAt));
         }
 
         $totalRows = (clone $query)->count();
@@ -158,5 +159,17 @@ class FbScheduledPostController extends Controller
         $html .= '</ul>';
 
         return $html;
+    }
+
+    /**
+     * Convert datepicker dd/mm/yyyy format to Y-m-d for MySQL.
+     * Matches CI3's mysql_date() helper.
+     */
+    private function parseDatepickerDate(string $date): ?string
+    {
+        $date = str_replace('/', '-', $date);
+        $parsed = strtotime($date);
+
+        return $parsed ? date('Y-m-d', $parsed) : null;
     }
 }

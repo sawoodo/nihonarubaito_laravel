@@ -142,6 +142,6 @@ Route::prefix('admin')->middleware('admin')->group(function () {
 
 // Catch-all slug routes (cache 30 min) — MUST be at the very bottom of web.php
 Route::middleware('cache:1800')->group(function () {
-    Route::get('{slug}/page/{page}', [ListingController::class, 'bySlug'])->where(['slug' => '[a-z0-9-]+', 'page' => '[0-9]+']);
-    Route::get('{slug}', [ListingController::class, 'bySlug'])->where('slug', '[a-z0-9-]+');
+    Route::get('{slug}/page/{page}', [ListingController::class, 'bySlug'])->where(['slug' => '[a-zA-Z0-9-]+', 'page' => '[0-9]+']);
+    Route::get('{slug}', [ListingController::class, 'bySlug'])->where('slug', '[a-zA-Z0-9-]+');
 });

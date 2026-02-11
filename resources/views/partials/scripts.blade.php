@@ -1,9 +1,9 @@
 
         <!-- DEFAULT JAVASCRIPT FILES -->
         <!-- ********************************************** -->
-        <script src="{{ mix('/js/manifest.js') }}"></script>
-	    <script src="{{ mix('/js/vendor.js') }}"></script>
-        <script src="{{ mix('/js/front-app.js') }}"></script>
+        <script src="{{ mix('/js/manifest.js') }}" defer></script>
+	    <script src="{{ mix('/js/vendor.js') }}" defer></script>
+        <script src="{{ mix('/js/front-app.js') }}" defer></script>
 
 
         @if (isset($js))
@@ -11,11 +11,11 @@
                 @if ($key === 'mix')
                     @if (is_array($file))
                         @foreach ($file as $_file)
-                            <script src="{{ mix($_file) }}" type="text/javascript"></script>
+                            <script src="{{ mix($_file) }}" type="text/javascript" defer></script>
                         @endforeach
                     @endif
                 @else
-                    <script src="{{ url($file) }}" type="text/javascript"></script>
+                    <script src="{{ url($file) }}" type="text/javascript" defer></script>
                 @endif
             @endforeach
         @endif

@@ -30,7 +30,7 @@ class ApplyCacheHeaders
 
         $maxAge = $request->attributes->get('cache_max_age');
 
-        if ($maxAge === null) {
+        if ($maxAge === null || $response->getStatusCode() >= 400) {
             return $response;
         }
 

@@ -69,7 +69,7 @@
                 <div class="col-md-3">
                     <div class="form-group {{ $errors->has('delete_at') ? 'has-error' : '' }}">
                         <label for="delete_at">Days to Delete :</label>
-                        <input type="text" id="delete_at" name="delete_at" class="form-control input-sm number" value="{{ old('delete_at', '30') }}" placeholder="Enter days after the job will be deleted">
+                        <input type="text" id="delete_at" name="delete_at" class="form-control input-sm number" value="{{ old('delete_at', '60') }}" placeholder="Enter days after the job will be deleted">
                         @error('delete_at') <span class="help-block">{{ $message }}</span> @enderror
                     </div>
                 </div>

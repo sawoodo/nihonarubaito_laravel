@@ -22,33 +22,19 @@
         @endif
 
 
-            <!-- Meta Pixel Code -->
+            <!-- Meta Pixel Code (deferred: loads on scroll or after 3s) -->
                 <script>
-                window.onload = function() {
-                    (function(f,b,e,v,n,t,s) {
-                        if(f.fbq) return;
-                        n = f.fbq = function() {
-                            n.callMethod ? n.callMethod.apply(n,arguments) : n.queue.push(arguments);
-                        };
-                        if(!f._fbq) f._fbq = n;
-                        n.push = n;
-                        n.loaded = !0;
-                        n.version = '2.0';
-                        n.queue = [];
-                        t = b.createElement(e);
-                        t.async = !0;
-                        t.src = v;
-                        s = b.getElementsByTagName(e)[0];
-                        s.parentNode.insertBefore(t,s);
-                    })(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
-
-                    fbq('init', '928026947957142');
-                    fbq('track', 'PageView');
-                };
+                function loadFBPixel(){if(window._fbLoaded)return;window._fbLoaded=true;
+                !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+                n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+                n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+                t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+                (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+                fbq('init','928026947957142');fbq('track','PageView');
+                document.removeEventListener('scroll',loadFBPixel)}
+                document.addEventListener('scroll',loadFBPixel);
+                setTimeout(loadFBPixel,3000);
                 </script>
-                <noscript><img height="1" width="1" style="display:none"
-                src="https://www.facebook.com/tr?id=928026947957142&ev=PageView&noscript=1"
-                /></noscript>
             <!-- End Meta Pixel Code -->
 
 
@@ -147,8 +133,9 @@
     <link rel="preload" href="/fonts/poppins-light-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous">
     <link rel="preload" href="/fonts/fontawesome-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous">
 
-    <!-- Inline critical CSS for faster rendering -->
-    <link rel="stylesheet" type="text/css" href="{{ mix('/css/front-app.css') }}">
+    <!-- CSS loaded asynchronously to eliminate render-blocking -->
+    <link rel="stylesheet" href="{{ mix('/css/front-app.css') }}" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="{{ mix('/css/front-app.css') }}"></noscript>
 
 
     @if (isset($css))
@@ -181,6 +168,7 @@
 
         <input type="hidden" name="base_url" id="base_url" value="{{ url('/') }}/">
         <input type="hidden" id="lang_selected" value="{{ $lang_selected ?? 0 }}">
+        <script>window.__AREAS_DATA = @json($preloadedAreas ?? []);</script>
 
         @include('partials.scripts')
 

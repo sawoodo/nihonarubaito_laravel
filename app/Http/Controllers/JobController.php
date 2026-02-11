@@ -94,6 +94,15 @@ class JobController extends Controller
 
     public function applySecondary(Request $request, string $jobNo)
     {
+        // Check job exists and is active before showing apply form
+        $jobBasic = Job::where('job_no', $jobNo)->select('job_status_id')->first();
+        if (!$jobBasic) {
+            abort(404);
+        }
+        if (in_array((int) $jobBasic->job_status_id, [Job::STATUS_EXPIRED, Job::STATUS_TRASHED])) {
+            return redirect("jobs/{$jobNo}/detail", 301);
+        }
+
         if ($request->isMethod('post')) {
             $validated = $request->validate([
                 'first_name' => 'required',

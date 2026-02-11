@@ -148,7 +148,7 @@ class JobController extends Controller
 
             $validated = $request->validate($rules);
 
-            $deleteInDays = max(1, (int) $request->input('delete_at', 30));
+            $deleteInDays = max(1, (int) $request->input('delete_at', 60));
 
             $job = Job::create([
                 'job_no'          => '',
@@ -234,7 +234,7 @@ class JobController extends Controller
 
             $validated = $request->validate($rules);
 
-            $deleteInDays = max(1, (int) $request->input('delete_at', 30));
+            $deleteInDays = max(1, (int) $request->input('delete_at', 60));
 
             $updateData = [
                 'title'              => $validated['title'],
@@ -359,7 +359,7 @@ class JobController extends Controller
             'lang_id'         => $original->lang_id,
             'user_id'         => $user->id,
             'job_status_id'   => Job::STATUS_PENDING,
-            'delete_at'       => date('Y-m-d', strtotime('+30 days')),
+            'delete_at'       => date('Y-m-d', strtotime('+60 days')),
         ]);
 
         $clone->update(['job_no' => (string) $clone->id]);

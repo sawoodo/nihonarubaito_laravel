@@ -1,7 +1,7 @@
 @extends('layouts.frontend')
 
 @push('page-scripts')
-    <script src="{{ mix('js/frontend-app-pages/home/detail.js') }}" type="text/javascript"></script>
+    <script src="{{ mix('js/frontend-app-pages/home/detail.js') }}" type="text/javascript" defer></script>
 @endpush
 
 @section('content')

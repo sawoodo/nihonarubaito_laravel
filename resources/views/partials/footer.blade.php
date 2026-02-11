@@ -35,11 +35,20 @@
 
                                 </div> -->
 
-                                <div style="margin-top: 15px;">
-                                    <a href="{{ url('privacy-policy') }}">Privacy Policy</a> &middot;
-                                    <a href="{{ url('terms-of-service') }}">Terms of Service</a> &middot;
-                                    <a href="{{ url('faq') }}">FAQ</a> &middot;
-                                    <a href="{{ url('contact') }}">Contact</a>
+                                <div style="margin-top: 15px; color: hsla(0,0%,100%,.4);">
+                                    <a href="{{ url('bed-making-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Bed Making Jobs</a> &middot;
+                                    <a href="{{ url('sorting-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Sorting Jobs</a> &middot;
+                                    <a href="{{ url('dish-washing-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Dish Washing Jobs</a> &middot;
+                                    <a href="{{ url('light-work-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Light Work Jobs</a> &middot;
+                                    <a href="{{ url('restaurant-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Restaurant Jobs</a> &middot;
+                                    <a href="{{ url('convenience-store-jobs-in-japan') }}" style="color: hsla(0,0%,100%,.4);">Convenience Store Jobs</a>
+                                </div>
+
+                                <div style="margin-top: 10px; color: hsla(0,0%,100%,.4);">
+                                    <a href="{{ url('privacy-policy') }}" style="color: hsla(0,0%,100%,.4);">Privacy Policy</a> &middot;
+                                    <a href="{{ url('terms-of-service') }}" style="color: hsla(0,0%,100%,.4);">Terms of Service</a> &middot;
+                                    <a href="{{ url('faq') }}" style="color: hsla(0,0%,100%,.4);">FAQ</a> &middot;
+                                    <a href="{{ url('contact') }}" style="color: hsla(0,0%,100%,.4);">Contact</a>
                                 </div>
                             </div>
                         </div>

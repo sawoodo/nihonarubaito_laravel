@@ -197,6 +197,13 @@ class ListingController extends Controller
      */
     public function bySlug(Request $request, string $slug, int $page = null)
     {
+        // 301 redirect uppercase slugs to lowercase (SEO canonical)
+        $lowerSlug = strtolower($slug);
+        if ($slug !== $lowerSlug) {
+            $url = $page ? "{$lowerSlug}/page/{$page}" : $lowerSlug;
+            return redirect($url, 301);
+        }
+
         $langId = (int) session('user_lang', 1);
         $langName = session('lang_name', 'english');
 
@@ -241,6 +248,12 @@ class ListingController extends Controller
                     $areaId = $area->id;
                     $prefectureId = $area->prefecture_id;
                 }
+            }
+
+            // If location was specified but nothing matched, 404 (prevents junk URLs like "please-select")
+            // Exception: "japan" means nationwide (category pages like bed-making-jobs-in-japan)
+            if (!$prefectureId && !$areaId && strtolower($location) !== 'japan') {
+                abort(404);
             }
 
             // Load popular areas for the matched prefecture
@@ -637,7 +650,7 @@ class ListingController extends Controller
      */
     private function buildBreadcrumb(array $prefectures, int $prefectureId, int $areaId, ?object $area, string $query, array $uri, string $langName): string
     {
-        $prefectureName = $prefectures[$prefectureId] ?? '';
+        $prefectureName = $prefectureId > 0 ? ($prefectures[$prefectureId] ?? '') : '';
         $querySlug = ($query && $query !== 'xxx') ? str_replace(' ', '-', $query) : '';
         $prefectureSlug = strtolower($prefectureName);
 
@@ -685,6 +698,8 @@ class ListingController extends Controller
         // Format as array of [id, name] to match CI3 response
         $formatted = $areas->map(fn($a) => [$a->id, $a->name])->values()->toJson();
 
-        return response()->json(['status' => 'ok', 'areas' => $formatted]);
+        return response()->json(['status' => 'ok', 'areas' => $formatted])
+            ->header('Cache-Control', 'public, max-age=86400')
+            ->header('Vary', 'Accept');
     }
 }

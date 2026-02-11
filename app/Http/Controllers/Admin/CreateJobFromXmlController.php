@@ -29,10 +29,13 @@ class CreateJobFromXmlController extends Controller
 
             $validated = $request->validate($rules);
 
+            // Sanitize bare & characters that aren't already XML entities
+            $xmlString = preg_replace('/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/', '&amp;', $validated['xml_data']);
+
             try {
-                $xml = simplexml_load_string($validated['xml_data']);
+                $xml = simplexml_load_string($xmlString);
             } catch (\Exception $e) {
-                return back()->withInput()->withErrors(['xml_data' => 'Invalid XML data.']);
+                return back()->withInput()->withErrors(['xml_data' => 'Invalid XML data: ' . $e->getMessage()]);
             }
 
             if ($xml === false) {
@@ -111,6 +114,8 @@ class CreateJobFromXmlController extends Controller
 
         try {
             $content = file_get_contents($file->getRealPath());
+            // Sanitize bare & characters that aren't already XML entities
+            $content = preg_replace('/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/', '&amp;', $content);
             $xml = simplexml_load_string($content);
 
             if ($xml === false) {

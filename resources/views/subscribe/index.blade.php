@@ -213,5 +213,5 @@
 @endsection
 
 @push('page-scripts')
-    <script src="{{ mix('js/frontend-app-pages/home_subscribe.js') }}"></script>
+    <script src="{{ mix('js/frontend-app-pages/home_subscribe.js') }}" defer></script>
 @endpush

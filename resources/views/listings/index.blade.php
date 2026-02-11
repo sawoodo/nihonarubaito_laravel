@@ -215,7 +215,7 @@
 @endsection
 
 @push('page-scripts')
-    <script src="{{ mix('js/frontend-app-pages/home/index.js') }}"></script>
+    <script src="{{ mix('js/frontend-app-pages/home/index.js') }}" defer></script>
 @endpush
 
 @push('structured-data')
