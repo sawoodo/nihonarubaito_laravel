@@ -1,5 +1,7 @@
 @extends('layouts.frontend')
 
+@include('partials.breadcrumb-schema')
+
 @section('content')
     <div class="section lb no-top-padding">
         <div class="container">
@@ -9,7 +11,16 @@
                 <div class="page-header text-center">
                     <div class="heading-holder">
                         <h1>{{ $page_heading }}</h1>
-                        <p>{{ $intro_paragraph }}</p>
+                        @if (isset($blog_post) && $blog_post)
+                            @php
+                                preg_match('/<p[^>]*>(.*?)<\/p>/s', $blog_post->post ?? '', $__firstPara);
+                            @endphp
+                            @if (!empty($__firstPara[0]))
+                                <div class="prefecture-intro">{!! $__firstPara[0] !!}</div>
+                            @endif
+                        @else
+                            <p>{{ $intro_paragraph }}</p>
+                        @endif
                     </div>
                 </div>
             @endif
@@ -24,8 +35,8 @@
                         <div class="row">
                             @foreach ($popular_areas as $area)
                                 <div class="col-xs-4 col-md-2 tw-mb-3 md:tw-mb-4 tw-text-xl md:tw-text-2xl">
-                                    @php $location = strtolower(str_replace(' ', '-', $area->area)) @endphp
-                                    <a href="{{ url($url . $location) }}">{{ $area->area }}</a>
+                                    @php $slug = strtolower(str_replace(' ', '-', $area->area_slug)) @endphp
+                                    <a href="{{ url($url . $slug) }}">{{ $area->area }}</a>
                                 </div>
                             @endforeach
                         </div>
@@ -82,7 +93,7 @@
                                 <h2 class="text-center">{{ $blog_post->title }}</h2>
                             @endif
 
-                            <div>{!! $blog_post->post !!}</div>
+                            <div>{!! preg_replace('/<p[^>]*>.*?<\/p>/s', '', $blog_post->post, 1) !!}</div>
                         </div>
                     </div>
                 </div>

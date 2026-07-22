@@ -22,51 +22,43 @@
         @endif
 
 
-            <!-- Meta Pixel Code (deferred: loads on scroll or after 3s) -->
-                <script>
-                function loadFBPixel(){if(window._fbLoaded)return;window._fbLoaded=true;
-                !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-                n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-                n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-                t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-                (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-                fbq('init','928026947957142');fbq('track','PageView');
-                document.removeEventListener('scroll',loadFBPixel)}
-                document.addEventListener('scroll',loadFBPixel);
-                setTimeout(loadFBPixel,3000);
-                </script>
-            <!-- End Meta Pixel Code -->
+        {{-- Staggered third-party loading: single scroll listener, offsets prevent main-thread pile-up --}}
+        <script>
+        (function(){
+            var fired=false;
+            function onInteract(){
+                if(fired)return;fired=true;
+                document.removeEventListener('scroll',onInteract);
+                document.removeEventListener('click',onInteract);
 
+                // 1) AdSense — immediate (ads most time-sensitive)
+                var as=document.createElement('script');as.async=true;
+                as.src='//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js';
+                as.onload=function(){(adsbygoogle=window.adsbygoogle||[]).push({google_ad_client:"ca-pub-5261166510941827",enable_page_level_ads:true})};
+                document.head.appendChild(as);
 
+                // 2) GA4 — 1s delay
+                setTimeout(function(){
+                    var gs=document.createElement('script');gs.async=true;
+                    gs.src='https://www.googletagmanager.com/gtag/js?id=G-8ZMLZ8JK5L';
+                    document.head.appendChild(gs);
+                },1000);
 
-        <script type="text/javascript">
-            //<![CDATA[
-            var adsLoaded = false;
-            window.addEventListener("scroll", function() {
-                // Check if the user has scrolled and the ads haven't been loaded yet
-                if ((document.documentElement.scrollTop !== 0 || document.body.scrollTop !== 0) && !adsLoaded) {
-                    // Create and insert the AdSense script asynchronously
-                    var script = document.createElement("script");
-                    script.type = "text/javascript";
-                    script.async = true;
-                    script.src = "//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js";
-                    var firstScript = document.getElementsByTagName("script")[0];
-                    firstScript.parentNode.insertBefore(script, firstScript);
-
-                    // Initialize the adsbygoogle array and push the ad configuration
-                    script.onload = function() {
-                        (adsbygoogle = window.adsbygoogle || []).push({
-                            google_ad_client: "ca-pub-5261166510941827",
-                            enable_page_level_ads: true
-                        });
-                    };
-
-                    // Set the flag to true to prevent reloading
-                    adsLoaded = true;
-                }
-            }, true);
-            //]]>
-            </script>
+                // 3) Facebook Pixel — 2s delay
+                setTimeout(function(){
+                    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+                    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+                    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+                    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+                    (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+                    fbq('init','928026947957142');fbq('track','PageView');
+                },2000);
+            }
+            document.addEventListener('scroll',onInteract,{once:true,passive:true});
+            document.addEventListener('click',onInteract,{once:true});
+            setTimeout(onInteract,5000);
+        })();
+        </script>
 
         <!-- Global Site Tag (gtag.js) - Google Analytics -->
        <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=UA-89925520-1"></script>
@@ -117,9 +109,13 @@
     <meta property="og:url" content="{{ $og_url ?? '' }}" />
     {!! isset($og_title) && $og_title ? '<meta property="og:title" content="' . $og_title . '" />' : '' !!}
     <meta property="og:description" content="{{ $og_description ?? '' }}" />
-    <meta property="og:site_name" content="NihonArubaito - Part-time Jobs in Japan" />
-    <meta property="og:type" content="article" />
-    <meta property="og:image" content="{{ $og_image ?? '' }}" />
+    <meta property="og:site_name" content="Nihon Arubaito - Part-time Jobs in Japan" />
+    <meta property="og:type" content="{{ $og_type ?? 'article' }}" />
+    <meta property="og:image" content="{{ $og_image ?? url('frontend/images/og-default.png') }}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="{{ $og_image ?? url('frontend/images/og-default.png') }}" />
     <!-- FAVICONS -->
     <link rel="shortcut icon" href="{{ url('frontend/images/favicon.ico') }}" type="image/x-icon">
 
@@ -162,13 +158,14 @@
 
         @include('partials.navigation')
 
+        <main>
         @yield('content')
+        </main>
 
         @include('partials.footer')
 
         <input type="hidden" name="base_url" id="base_url" value="{{ url('/') }}/">
         <input type="hidden" id="lang_selected" value="{{ $lang_selected ?? 0 }}">
-        <script>window.__AREAS_DATA = @json($preloadedAreas ?? []);</script>
 
         @include('partials.scripts')
 

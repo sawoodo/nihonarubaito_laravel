@@ -1,5 +1,7 @@
 @extends('layouts.frontend')
 
+@include('partials.breadcrumb-schema')
+
 @push('page-scripts')
     <script src="{{ mix('js/frontend-app-pages/home/detail.js') }}" type="text/javascript" defer></script>
 @endpush
@@ -40,8 +42,10 @@
                                                     </div>
 
                                                     @if (app()->environment('production'))
-                                                        <div id="amzn-assoc-ad-a4bb43c1-c2bc-4046-bfaa-94f06edd459f"></div>
-                                                        <script async src="//z-na.amazon-adsystem.com/widgets/onejs?MarketPlace=US&adInstanceId=a4bb43c1-c2bc-4046-bfaa-94f06edd459f"></script>
+                                                        <div style="min-height:250px;overflow:hidden">
+                                                            <div id="amzn-assoc-ad-a4bb43c1-c2bc-4046-bfaa-94f06edd459f"></div>
+                                                            <script async src="//z-na.amazon-adsystem.com/widgets/onejs?MarketPlace=US&adInstanceId=a4bb43c1-c2bc-4046-bfaa-94f06edd459f"></script>
+                                                        </div>
                                                         <small>{{ $job->img_link }}</small>
                                                     @endif
                                                 </div>
@@ -87,6 +91,9 @@
 
                                         <div class="col-md-8 text-left">
                                             <h1 class="h3">{{ $job->title }}</h1>
+                                            <p style="color: #666; font-size: 0.85em; margin-bottom: 15px; padding: 8px 12px; background: #f8f9fa; border-radius: 4px;">
+                                                Please confirm workplace location, payment method, shifts, and interview conditions directly with the employer before applying.
+                                            </p>
 
                                             <hr>
 
@@ -222,6 +229,7 @@
                                                             <a
                                                                 href="{{ $job->apply_link }}"
                                                                 target="_blank"
+                                                                rel="nofollow sponsored noopener"
                                                                 class="btn btn-primary btn-lg btn-block btn-apply"
                                                                 onclick="alert('{{ $alert }}')"
                                                             >
@@ -293,12 +301,14 @@
                                     @endif
 
                                     @if (app()->environment('production'))
-                                    <ins class="adsbygoogle"
-                                        style="display:inline-block;width:360px;height:800px"
-                                        data-ad-client="ca-pub-5261166510941827"
-                                        data-ad-slot="9902449989">
-                                    </ins>
-                                    <script>(adsbygoogle = window.adsbygoogle || []).push({})</script>
+                                    <div style="min-height:800px;overflow:hidden">
+                                        <ins class="adsbygoogle"
+                                            style="display:inline-block;width:360px;height:800px"
+                                            data-ad-client="ca-pub-5261166510941827"
+                                            data-ad-slot="9902449989">
+                                        </ins>
+                                        <script>requestIdleCallback(function(){(adsbygoogle=window.adsbygoogle||[]).push({})})</script>
+                                    </div>
                                     @endif
 
                                 @else

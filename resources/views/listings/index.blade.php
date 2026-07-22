@@ -40,8 +40,8 @@
                                         <h3>{{ $region }}</h3>
                                         <div class="tw-flex tw-flex-wrap">
                                             @foreach ($prefectures_in_region as $pref)
-                                                @php $prefecture = strtolower($pref->prefecture) @endphp
-                                                <a href="{{ url("hand-cash-jobs-in-{$prefecture}") }}" class="tw-mx-5">
+                                                @php $prefSlug = strtolower($pref->prefecture_slug) @endphp
+                                                <a href="{{ url("hand-cash-jobs-in-{$prefSlug}") }}" class="tw-mx-5">
                                                     Hand Cash Jobs In {{ $pref->prefecture }}
                                                 </a>
                                             @endforeach
@@ -66,8 +66,8 @@
                                         <h3>{{ $region }}</h3>
                                         <div class="tw-flex tw-flex-wrap">
                                             @foreach ($prefectures_in_region as $pref)
-                                                @php $prefecture = strtolower($pref->prefecture) @endphp
-                                                <a href="{{ url("part-time-jobs-in-{$prefecture}") }}" class="tw-mx-5">
+                                                @php $prefSlug = strtolower($pref->prefecture_slug) @endphp
+                                                <a href="{{ url("part-time-jobs-in-{$prefSlug}") }}" class="tw-mx-5">
                                                     Part Time Jobs In {{ $pref->prefecture }}
                                                 </a>
                                             @endforeach
@@ -100,9 +100,9 @@
                                             <h4>{{ $prefecture }}</h4>
                                             <div class="row">
                                                 @foreach ($areas as $area)
-                                                    @php $location = strtolower(str_replace(' ', '-', $area->area)) @endphp
+                                                    @php $slug = Str::slug($area->area_slug) @endphp
                                                     <div class="col-xs-4 col-md-2 tw-mb-3 md:tw-mb-4 tw-text-xl md:tw-text-2xl">
-                                                        <a href="{{ url("part-time-jobs-in-{$location}") }}">
+                                                        <a href="{{ url("part-time-jobs-in-{$slug}") }}">
                                                             {{ $area->area }}
                                                         </a>
                                                     </div>
@@ -148,11 +148,11 @@
                                             'hakata' => 'Hakata Station',
                                             'tenjin' => 'Tenjin Station',
                                             'nagoya' => 'Nagoya Station',
-                                            'Toyohashi' => 'Toyohashi Station',
+                                            'toyohashi' => 'Toyohashi Station',
                                             'sakae' => 'Sakae Station',
-                                            'Utsunomiya' => 'Utsunomiya Station',
+                                            'utsunomiya' => 'Utsunomiya Station',
                                             'sendai' => 'Sendai Station',
-                                            'Hirose-dori' => 'Hirose-dori Station',
+                                            'hirose-dori' => 'Hirose-dori Station',
                                             'omiya' => 'Omiya Station',
                                             'kawaguchi' => 'Kawaguchi Station',
                                             'kawasaki' => 'Kawasaki Station',
@@ -165,7 +165,7 @@
                                             'maebashi' => 'Maebashi Station',
                                             'gifu' => 'Gifu Station',
                                             'hamamatsu' => 'Hamamatsu Station',
-                                            'Shizuoka' => 'Shizuoka Station',
+                                            'shizuoka' => 'Shizuoka Station',
                                         ] as $stationSlug => $stationName)
                                             <div class="col-xs-4 col-md-2 tw-mb-3 md:tw-mb-4 tw-text-xl md:tw-text-2xl">
                                                 <a href="{{ url("part-time-jobs-at-{$stationSlug}-station") }}">
@@ -234,6 +234,19 @@
         "@type": "ContactPoint",
         "email": "support@nihonarubaito.com",
         "contactType": "customer service"
+    }
+}
+</script>
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Nihon Arubaito",
+    "url": "https://nihonarubaito.com/",
+    "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://nihonarubaito.com/jobs/search?query={search_term_string}",
+        "query-input": "required name=search_term_string"
     }
 }
 </script>

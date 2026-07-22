@@ -5,11 +5,11 @@
                             <div class="widget clearfix">
                                 <p>
                                     @if (empty($user_lang) || $user_lang == 1)
-                                        NihonArubaito is providing part-time jobs information for people who are living and looking for job in Japan. You can see all the jobs, their complete information and apply online for free. In NihonArubaito.com, part-time job information is available in different languages(Chinese, English and Vietnamese). Please subscribe to get extra benifets for free
+                                        Nihon Arubaito provides part-time job listings in English for foreign residents in Japan. Browse jobs, subscribe for alerts, and apply online for free.
                                     @elseif ($user_lang == 2)
-                                        Nihon Arubaito为在日本生活和寻找工作的人提供兼职工作信息。 你可以看到所有的工作，他们的完整信息，并免费在线申请。 在NihonArubaito.com，兼职工作信息有不同的语言（中文，英语和越南语）。 请订阅免费获得额外的益处
+                                        Nihon Arubaito为在日本的外国居民提供英语兼职工作信息。浏览工作、订阅提醒并免费在线申请。
                                     @elseif ($user_lang == 3)
-                                        NihonArubaito đang cung cấp một phần thông tin thời gian việc làm cho những người đang sống và tìm kiếm việc làm tại Nhật Bản. Bạn có thể xem tất cả các công việc, thông tin đầy đủ và nộp đơn trực tuyến miễn phí. Trong NihonArubaito.com, thông tin việc làm bán thời gian có sẵn trong các ngôn ngữ khác nhau (tiếng Trung, tiếng Anh và tiếng Việt). Hãy đăng ký để có benifets thêm miễn phí
+                                        Nihon Arubaito cung c&#7845;p th&ocirc;ng tin vi&#7879;c l&agrave;m b&aacute;n th&#7901;i gian b&#7857;ng ti&#7871;ng Anh cho ng&#432;&#7901;i n&#432;&#7899;c ngo&agrave;i t&#7841;i Nh&#7853;t B&#7843;n. Duy&#7879;t vi&#7879;c l&agrave;m, &#273;&#259;ng k&yacute; nh&#7853;n th&ocirc;ng b&aacute;o v&agrave; &#7913;ng tuy&#7875;n tr&#7921;c tuy&#7871;n mi&#7877;n ph&iacute;.
                                     @elseif ($user_lang == 4)
                                         にほんアルバイトは、英語、ベトナム語、中国語で読める、日本で住んでいる働きたい外国人のためのアルバイト求人情報サイトです。
                                     @endif
@@ -50,6 +50,8 @@
                                     <a href="{{ url('faq') }}" style="color: hsla(0,0%,100%,.4);">FAQ</a> &middot;
                                     <a href="{{ url('contact') }}" style="color: hsla(0,0%,100%,.4);">Contact</a>
                                 </div>
+
+                                <p style="margin-top: 15px; color: hsla(0,0%,100%,.4); font-size: 13px;">&copy; 2016&ndash;{{ date('Y') }} Nihon Arubaito. All rights reserved.</p>
                             </div>
                         </div>
 

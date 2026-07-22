@@ -33,21 +33,8 @@
             </script> -->
 
         <script>
-            function analyticsOnScroll() {
-                var head = document.getElementsByTagName('head')[0]
-                var script = document.createElement('script')
-                script.type = 'text/javascript';
-                script.src = 'https://www.googletagmanager.com/gtag/js?id=G-8ZMLZ8JK5L'
-                head.appendChild(script);
-                document.removeEventListener('scroll', analyticsOnScroll);
-            };
-            document.addEventListener('scroll', analyticsOnScroll);
-        </script>
-
-        <script>
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-
             gtag('config', 'G-8ZMLZ8JK5L');
         </script>
