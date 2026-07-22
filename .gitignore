@@ -31,3 +31,47 @@ yarn-error.log
 /public/js
 /public/plugins
 /public/mix-manifest.json
+
+# Backups and database dumps
+*.sql.gz
+*.backup
+*.bak
+*.local-bak
+*.prod_current
+*.wage_fix_base
+/backups/
+
+# Ad-hoc deployment and test scripts
+/tmp_*.php
+/test_*.php
+/verify_*.php
+/check_*.php
+/fix_*.php
+/deploy_*.php
+/migrate_*.php
+/update_*.php
+/backfill_*.php
+/backup_*.php
+/find_*.php
+/list_*.php
+/count_*.php
+/osaka_edits.php
+/phase2_*.php
+/postal_*.php
+/publish_and_schedule.php
+/gate_*.php
+/nul
+*.txt
+/migrate_content/
+/migrate_parts/
+/live_battery_*.sh
+/boost.json
+
+# Ad-hoc scripts in storage/
+/storage/check-*.php
+/storage/deploy-*.php
+/storage/test_*.php
+/storage/query-*.php
+/storage/update-*.php
+/storage/pref-*.php
+/storage/*.html
