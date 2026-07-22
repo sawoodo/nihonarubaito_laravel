@@ -7,6 +7,7 @@ use App\Models\Country;
 use App\Models\JobCategoryPreference;
 use App\Models\JobLocationPreference;
 use App\Models\Prefecture;
+use App\Models\SubscriberPreference;
 use App\Models\User;
 use App\Models\UserInfo;
 use Illuminate\Http\Request;
@@ -129,6 +130,28 @@ class SubscribeController extends Controller
                 ]);
             }
         }
+
+        // Save enhanced subscriber preferences (all optional fields)
+        SubscriberPreference::create([
+            'user_id'                => $user->id,
+            'area_ids'               => $request->input('enhanced_area_ids', []),
+            'commute_neighboring'    => $request->boolean('commute_neighboring'),
+            'wants_monthly_transfer' => $request->boolean('wants_monthly_transfer', true),
+            'wants_daily_payment'    => $request->boolean('wants_daily_payment'),
+            'wants_hand_cash'        => $request->boolean('wants_hand_cash'),
+            'shift_morning'          => $request->boolean('shift_morning'),
+            'shift_afternoon'        => $request->boolean('shift_afternoon'),
+            'shift_evening'          => $request->boolean('shift_evening'),
+            'shift_night'            => $request->boolean('shift_night'),
+            'shift_any'              => $request->boolean('shift_any', true),
+            'visa_type'              => $request->input('visa_type'),
+            'japanese_level'         => $request->input('enhanced_japanese_level'),
+            'max_hours_per_week'     => $request->input('max_hours_per_week'),
+            'min_wage'               => $request->input('min_wage'),
+            'alert_frequency'        => $request->input('alert_frequency', 'weekly'),
+            'alert_hand_cash'        => $request->boolean('alert_hand_cash'),
+            'alert_high_wage'        => $request->boolean('alert_high_wage'),
+        ]);
 
         // Send notification email
         try {

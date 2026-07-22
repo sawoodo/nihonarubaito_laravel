@@ -42,6 +42,8 @@ class AccountController extends Controller
         return view('account.login', [
             'authentication_failed' => $authFailed,
             'page_title'            => 'Login | Nihon Arubaito',
+            'canonical'             => 'https://nihonarubaito.com/account',
+            'og_url'                => 'https://nihonarubaito.com/account',
             'active_nav'            => 'account',
         ]);
     }

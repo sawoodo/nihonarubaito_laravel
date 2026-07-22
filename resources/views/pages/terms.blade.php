@@ -1,5 +1,7 @@
 @extends('layouts.frontend')
 
+@include('partials.breadcrumb-schema')
+
 @section('content')
     <div class="section wb no-top-padding">
         <div class="container">

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 class PageController extends Controller
@@ -15,6 +16,7 @@ class PageController extends Controller
             'canonical'        => 'https://nihonarubaito.com/contact',
             'og_url'           => 'https://nihonarubaito.com/contact',
             'active_nav'       => 'contact',
+            'breadcrumbItems'  => [['name' => 'Home', 'url' => url('/')], ['name' => 'Contact']],
         ]);
     }
 
@@ -54,6 +56,7 @@ class PageController extends Controller
             'page_description' => 'Nihonarubaito.com Privacy Policy - Learn how we collect, use and protect your personal information.',
             'canonical'        => 'https://nihonarubaito.com/privacy-policy',
             'og_url'           => 'https://nihonarubaito.com/privacy-policy',
+            'breadcrumbItems'  => [['name' => 'Home', 'url' => url('/')], ['name' => 'Privacy Policy']],
         ]);
     }
 
@@ -64,16 +67,28 @@ class PageController extends Controller
             'page_description' => 'Learn about Nihonarubaito.com - a multilingual job search platform for part-time jobs in Japan.',
             'canonical'        => 'https://nihonarubaito.com/about',
             'og_url'           => 'https://nihonarubaito.com/about',
+            'breadcrumbItems'  => [['name' => 'Home', 'url' => url('/')], ['name' => 'About']],
         ]);
     }
 
     public function faq()
     {
+        $faqData = cache()->remember('faq_platform_stats', 3600, function () {
+            $activeJobs = DB::table('jobs')->where('job_status_id', 3)->count();
+            $subscribers = DB::table('job_location_preferences')->distinct('user_id')->count('user_id');
+            return [
+                'active_jobs'       => number_format($activeJobs),
+                'total_subscribers' => number_format($subscribers),
+            ];
+        });
+
         return view('pages.faq', [
-            'page_title'       => 'FAQ | Nihonarubaito.com',
-            'page_description' => 'Frequently asked questions about Nihonarubaito.com - find answers about job search, applications, and accounts.',
+            'page_title'       => 'FAQ - Part-Time Jobs in Japan for Foreigners | Nihon Arubaito',
+            'page_description' => 'Answers about part-time work in Japan for foreigners. Hand cash jobs, daily payment, student visa work hours, minimum wage by prefecture, and how to find arubaito listed in English.',
             'canonical'        => 'https://nihonarubaito.com/faq',
             'og_url'           => 'https://nihonarubaito.com/faq',
+            'breadcrumbItems'  => [['name' => 'Home', 'url' => url('/')], ['name' => 'FAQ']],
+            'faqData'          => $faqData,
         ]);
     }
 
@@ -84,6 +99,7 @@ class PageController extends Controller
             'page_description' => 'Nihonarubaito.com Terms of Service - Read our terms and conditions for using the platform.',
             'canonical'        => 'https://nihonarubaito.com/terms-of-service',
             'og_url'           => 'https://nihonarubaito.com/terms-of-service',
+            'breadcrumbItems'  => [['name' => 'Home', 'url' => url('/')], ['name' => 'Terms of Service']],
         ]);
     }
 }

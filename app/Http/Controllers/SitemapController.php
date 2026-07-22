@@ -23,6 +23,16 @@ class SitemapController extends Controller
 
     public function xml()
     {
+        // Serve pre-generated sitemap if available (faster, avoids DB queries)
+        $cachedPath = storage_path('app/sitemap.xml');
+        if (file_exists($cachedPath) && filemtime($cachedPath) > time() - 86400) {
+            return response(file_get_contents($cachedPath), 200, [
+                'Content-Type' => 'application/xml; charset=UTF-8',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'no-cache',
+                'X-SG-Exclude-Cache' => '1',
+            ]);
+        }
         $langId = (int) session('user_lang', 1);
         $langName = session('lang_name', 'english');
 
@@ -83,7 +93,7 @@ class SitemapController extends Controller
         $emittedSlugs = [];
         foreach ($areas as $prefKey => $locations) {
             $parts = explode('|', $prefKey);
-            $prefSlug = strtolower($parts[0]);
+            $prefSlug = Str::slug($parts[0]);
 
             if (!isset($emittedSlugs[$prefSlug])) {
                 $emittedSlugs[$prefSlug] = true;
@@ -91,7 +101,7 @@ class SitemapController extends Controller
             }
 
             foreach ($locations as $area) {
-                $areaSlug = strtolower(str_replace(' ', '-', $area->area));
+                $areaSlug = Str::slug($area->area);
                 if (isset($emittedSlugs[$areaSlug])) {
                     continue;
                 }

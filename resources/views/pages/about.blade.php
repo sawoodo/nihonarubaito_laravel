@@ -1,12 +1,14 @@
 @extends('layouts.frontend')
 
+@include('partials.breadcrumb-schema')
+
 @section('content')
     <div class="section wb no-top-padding">
         <div class="container">
 
             <div class="row">
                 <div class="col-md-12">
-                    <h3 class="page-header text-center">About Nihonarubaito.com</h3>
+                    <h1 class="page-header text-center h3">About Nihonarubaito.com</h1>
                 </div>
             </div>
 
