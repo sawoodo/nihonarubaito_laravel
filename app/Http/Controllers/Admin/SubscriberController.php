@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\JobCategoryPreference;
 use App\Models\JobLocationPreference;
+use App\Models\SubscriberPreference;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -110,11 +111,25 @@ class SubscriberController extends Controller
             $locations[$row->prefecture][] = $row->area;
         }
 
+        // Enhanced preferences
+        $preferences = SubscriberPreference::where('user_id', $id)->first();
+
+        // Resolve area names if enhanced area_ids are set
+        $enhancedAreas = [];
+        if ($preferences && !empty($preferences->area_ids)) {
+            $enhancedAreas = DB::table('areas')
+                ->whereIn('id', $preferences->area_ids)
+                ->pluck('english', 'id')
+                ->toArray();
+        }
+
         return view('admin.subscribers.detail', [
-            'activeSideMenu' => 'subscribers',
-            'subscriber'     => $subscriber,
-            'categories'     => $categories,
-            'locations'      => $locations,
+            'activeSideMenu'  => 'subscribers',
+            'subscriber'      => $subscriber,
+            'categories'      => $categories,
+            'locations'       => $locations,
+            'preferences'     => $preferences,
+            'enhancedAreas'   => $enhancedAreas,
         ]);
     }
 
@@ -148,6 +163,49 @@ class SubscriberController extends Controller
         return view('admin.subscribers.change-password', [
             'activeSideMenu' => 'subscribers',
             'subscriber'     => $subscriber,
+        ]);
+    }
+
+    public function insights()
+    {
+        $this->authorizeAdmin();
+
+        $stats = [
+            'total_subscribers' => User::subscribers()->count(),
+            'with_preferences' => SubscriberPreference::count(),
+
+            'visa_breakdown' => DB::table('subscriber_preferences')
+                ->whereNotNull('visa_type')
+                ->where('visa_type', '!=', '')
+                ->selectRaw('visa_type, COUNT(*) as count')
+                ->groupBy('visa_type')
+                ->orderByDesc('count')
+                ->get(),
+
+            'japanese_breakdown' => DB::table('subscriber_preferences')
+                ->whereNotNull('japanese_level')
+                ->where('japanese_level', '!=', '')
+                ->selectRaw('japanese_level, COUNT(*) as count')
+                ->groupBy('japanese_level')
+                ->orderByDesc('count')
+                ->get(),
+
+            'wants_hand_cash' => SubscriberPreference::where('wants_hand_cash', true)->count(),
+            'wants_daily_payment' => SubscriberPreference::where('wants_daily_payment', true)->count(),
+
+            'shift_morning' => SubscriberPreference::where('shift_morning', true)->count(),
+            'shift_afternoon' => SubscriberPreference::where('shift_afternoon', true)->count(),
+            'shift_evening' => SubscriberPreference::where('shift_evening', true)->count(),
+            'shift_night' => SubscriberPreference::where('shift_night', true)->count(),
+
+            'alert_immediate' => SubscriberPreference::where('alert_frequency', 'immediate')->count(),
+            'alert_daily' => SubscriberPreference::where('alert_frequency', 'daily')->count(),
+            'alert_weekly' => SubscriberPreference::where('alert_frequency', 'weekly')->count(),
+        ];
+
+        return view('admin.subscribers.insights', [
+            'activeSideMenu' => 'subscriber_insights',
+            'stats' => $stats,
         ]);
     }
 

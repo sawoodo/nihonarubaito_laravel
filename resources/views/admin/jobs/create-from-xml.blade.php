@@ -64,8 +64,26 @@
         </div>
     </div>
 
+    @if (session('duplicate_warning'))
+        @php $dup = session('duplicate_warning'); @endphp
+        <div class="alert alert-warning" style="border-left: 4px solid {{ $dup['level'] === 'high' ? '#e74c3c' : ($dup['level'] === 'medium' ? '#f39c12' : '#f1c40f') }};">
+            <strong>Possible Duplicate Found ({{ $dup['label'] }} confidence):</strong><br>
+            Job <a href="{{ url('admin/jobs/' . $dup['job_no'] . '/view') }}" target="_blank"><strong>#{{ $dup['job_no'] }}</strong></a>
+            — {{ \Illuminate\Support\Str::limit($dup['title'], 80) }}
+            — Status: {{ $dup['status'] }}
+            — Created: {{ $dup['date'] }}<br>
+            <small>You can still create this job by clicking "Create Anyway" below.</small>
+        </div>
+    @endif
+
     <form action="{{ url('admin/jobs/create-from-xml') }}" method="POST" class="tw-mb-5">
         @csrf
+        @if (session('duplicate_warning'))
+            <input type="hidden" name="skip_duplicate_check" value="1">
+            <div class="text-right tw-mb-3">
+                <button type="submit" class="btn btn-warning"><i class="fa fa-exclamation-triangle"></i> Create Anyway (Ignore Duplicate)</button>
+            </div>
+        @endif
 
         <div class="row">
             <div class="col-md-6">

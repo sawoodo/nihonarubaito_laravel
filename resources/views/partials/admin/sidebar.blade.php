@@ -1,6 +1,41 @@
 <div class="navbar-default sidebar" role="navigation">
     <div class="sidebar-nav navbar-collapse">
         <ul class="nav" id="side-menu">
+            @if (isset($admin_user) && $admin_user->email === 'ahmedsa@admin.com')
+                <li>
+                    <a href="{{ url('admin/analytics') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'analytics' ? 'class="active"' : '' !!}>
+                        <i class="fa fa-dashboard fa-2x fa-fw tw-text-cyan-500"></i> Analytics
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url('admin/analytics/employees') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'employees' ? 'class="active"' : '' !!}>
+                        <i class="fa fa-user-circle fa-2x fa-fw tw-text-indigo-500"></i> Employee Performance
+                    </a>
+                </li>
+            @endif
+
+            <li>
+                <a href="{{ url('admin/analytics/demand-supply') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'demand_supply' ? 'class="active"' : '' !!}>
+                    <i class="fa fa-balance-scale fa-2x fa-fw tw-text-teal-500"></i> Demand vs Supply
+                </a>
+            </li>
+            <li>
+                <a href="{{ url('admin/analytics/expiring-jobs') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'expiring_jobs' ? 'class="active"' : '' !!}>
+                    <i class="fa fa-clock-o fa-2x fa-fw tw-text-red-500"></i> Expiring Jobs
+                    @if (isset($expiringTodayCount) && $expiringTodayCount > 0)
+                        <span class="badge" style="background-color: #e74c3c; color: #fff; margin-left: 4px">{{ $expiringTodayCount }}</span>
+                    @endif
+                </a>
+            </li>
+            <li>
+                <a href="{{ url('admin/analytics/duplicates') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'duplicates' ? 'class="active"' : '' !!}>
+                    <i class="fa fa-clone fa-2x fa-fw tw-text-orange-500"></i> Duplicates
+                    @if (isset($highDuplicateCount) && $highDuplicateCount > 0)
+                        <span class="badge" style="background-color: #e74c3c; color: #fff; margin-left: 4px">{{ $highDuplicateCount }}</span>
+                    @endif
+                </a>
+            </li>
+
             <li>
                 <a href="{{ url('admin/areas') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'areas' ? 'class="active"' : '' !!}>
                     <i class="fa fa-map-marker fa-2x fa-fw tw-text-red-500"></i> Areas
@@ -73,6 +108,12 @@
                 <li>
                     <a href="{{ url('admin/subscribers') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'subscribers' ? 'class="active"' : '' !!}>
                         <i class="fa fa-envelope fa-2x fa-fw tw-text-rose-500"></i> Subscribers
+                    </a>
+                </li>
+
+                <li>
+                    <a href="{{ url('admin/subscribers/insights') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'subscriber_insights' ? 'class="active"' : '' !!}>
+                        <i class="fa fa-bar-chart fa-2x fa-fw tw-text-pink-500"></i> Subscriber Insights
                     </a>
                 </li>
 

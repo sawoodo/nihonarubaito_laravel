@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Area;
 use App\Models\Category;
 use App\Models\Image;
 use App\Models\FbPost;
@@ -12,6 +13,7 @@ use App\Models\Prefecture;
 use App\Models\TransExpPayment;
 use App\Models\User;
 use App\Models\WageType;
+use App\Services\JobDeduplicator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -148,6 +150,30 @@ class JobController extends Controller
 
             $validated = $request->validate($rules);
 
+            // Duplicate check (skip if user confirmed via hidden field)
+            if (!$request->input('skip_duplicate_check')) {
+                $dup = JobDeduplicator::findDuplicate(
+                    $validated['company_name'],
+                    (int) $validated['prefecture_id'],
+                    (int) $validated['area_id'],
+                    $validated['title']
+                );
+                if ($dup) {
+                    $levelLabels = ['high' => 'HIGH', 'medium' => 'MEDIUM', 'low' => 'LOW'];
+                    $statusLabels = [1 => 'Draft', 2 => 'Pending', 3 => 'Published'];
+                    $dupJob = $dup['job'];
+                    $dupWarning = [
+                        'level'   => $dup['level'],
+                        'label'   => $levelLabels[$dup['level']] ?? $dup['level'],
+                        'job_no'  => $dupJob->job_no,
+                        'title'   => $dupJob->title,
+                        'date'    => $dupJob->date,
+                        'status'  => $statusLabels[$dupJob->job_status_id] ?? 'Unknown',
+                    ];
+                    return back()->withInput()->with('duplicate_warning', $dupWarning);
+                }
+            }
+
             $deleteInDays = max(1, (int) $request->input('delete_at', 60));
 
             $job = Job::create([
@@ -188,14 +214,32 @@ class JobController extends Controller
             return redirect('/admin/jobs')->with('success', 'Job has been successfully created.');
         }
 
-        return view('admin.jobs.create', array_merge($this->getFormDropdowns($user), [
-            'job'           => null,
-            'images_img_id' => 0,
-            'images_img_name' => '',
-            'images_img_ext' => '',
-            'featured'      => false,
-            'send_email'    => false,
-            'activeSideMenu' => 'jobs',
+        $dropdowns = $this->getFormDropdowns($user);
+
+        // Pre-fill from query params (e.g., from Demand vs Supply page)
+        $prefillPrefecture = (int) $request->query('prefecture_id');
+        $prefillArea = (int) $request->query('area_id');
+        $prefillCategory = (int) $request->query('category_id');
+
+        if ($prefillPrefecture) {
+            $dropdowns['area_list'] = Area::join('towns', 'areas.town_id', '=', 'towns.id')
+                ->where('towns.prefecture_id', $prefillPrefecture)
+                ->pluck('areas.english', 'areas.id')
+                ->prepend('Please select', 0)
+                ->toArray();
+        }
+
+        return view('admin.jobs.create', array_merge($dropdowns, [
+            'job'              => null,
+            'images_img_id'    => 0,
+            'images_img_name'  => '',
+            'images_img_ext'   => '',
+            'featured'         => false,
+            'send_email'       => false,
+            'activeSideMenu'   => 'jobs',
+            'prefill_prefecture_id' => $prefillPrefecture,
+            'prefill_area_id'       => $prefillArea,
+            'prefill_category_id'   => $prefillCategory,
         ]));
     }
 
@@ -395,10 +439,16 @@ class JobController extends Controller
             return;
         }
 
-        $applyLink = url("jobs/{$job->job_no}/detail");
-        $note = "Note: If you are interested, please go to the link of the job carefully and confirm details such as the workplace, payment, interview condition, shifts etc.";
+        $applyLink = "nihonarubaito.com/jobs/{$job->job_no}/detail?utm_source=fb";
+        $desc = strip_tags(str_replace(['<br/>', '<br>', '<br />'], ' ', $job->description ?? ''));
 
-        $content = "{$job->title}\r\n{$job->description}\r\n{$job->wage}{$job->wage_detail}\r\n{$job->station}\r\n{$job->working_hours}\r\n{$job->working_days}\r\nCheck Job Detail: {$applyLink}\r\n{$note}";
+        $content = $job->title . "\n\n"
+            . $desc . "\n\n"
+            . ($job->station ? $job->station . "\n" : '')
+            . ($job->working_hours ? $job->working_hours . "\n" : '')
+            . ($job->working_days ? $job->working_days . "\n" : '')
+            . "\n"
+            . 'Check Job Detail: ' . $applyLink;
 
         // Schedule: 15 min after last post, or 3 hours ago if no recent posts
         $lastPost = FbPost::orderByDesc('id')->first();

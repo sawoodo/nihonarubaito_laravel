@@ -4,38 +4,49 @@ namespace App\Console\Commands;
 
 use App\Models\Job;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AutoTrashJobs extends Command
 {
-    protected $signature = 'jobs:auto-trash';
+    protected $signature = 'jobs:auto-trash {--dry-run : Show what would be expired without changing anything}';
 
-    protected $description = 'Expire published jobs past Expire_Date, trash published jobs past delete_at';
+    protected $description = 'Move expired jobs (past delete_at date) from Published (3) to Expired (4)';
 
     public function handle()
     {
-        // Step 1: Move published jobs past Expire_Date → Expired (status 4)
-        $expired = Job::where('job_status_id', Job::STATUS_PUBLISHED)
-            ->whereNotNull('Expire_Date')
-            ->where('Expire_Date', '<', now())
-            ->update([
-                'job_status_id' => Job::STATUS_EXPIRED,
-                'updated_at' => now(),
-            ]);
+        $dryRun = $this->option('dry-run');
 
-        // Step 2: Move published jobs past delete_at → Trashed (status 5)
-        $trashed = Job::where('job_status_id', Job::STATUS_PUBLISHED)
+        $query = Job::where('job_status_id', Job::STATUS_PUBLISHED)
             ->whereNotNull('delete_at')
-            ->whereRaw('DATE(`delete_at`) <= CURDATE()')
-            ->update([
-                'job_status_id' => Job::STATUS_TRASHED,
-                'updated_at' => now(),
-            ]);
+            ->whereRaw('DATE(`delete_at`) <= CURDATE()');
 
-        $this->info("Expired {$expired} jobs, trashed {$trashed} jobs.");
+        if ($dryRun) {
+            $count = $query->count();
+            $this->info("[DRY RUN] Would expire {$count} jobs.");
 
-        if ($expired > 0 || $trashed > 0) {
-            Log::info("jobs:auto-trash — expired {$expired}, trashed {$trashed}");
+            $samples = Job::where('job_status_id', Job::STATUS_PUBLISHED)
+                ->whereNotNull('delete_at')
+                ->whereRaw('DATE(`delete_at`) <= CURDATE()')
+                ->limit(10)
+                ->get(['job_no', 'title', 'delete_at']);
+
+            foreach ($samples as $job) {
+                $this->line("  - Job {$job->job_no}: {$job->title} (delete_at: {$job->delete_at})");
+            }
+
+            return Command::SUCCESS;
+        }
+
+        $affected = $query->update([
+            'job_status_id' => Job::STATUS_EXPIRED,
+            'updated_at' => now(),
+        ]);
+
+        $this->info("Expired {$affected} jobs.");
+
+        if ($affected > 0) {
+            Log::info("jobs:auto-trash expired {$affected} jobs");
         }
 
         return Command::SUCCESS;

@@ -15,7 +15,7 @@
         <div class="col-md-3">
             <div class="form-group">
                 <label>From</label>
-                <input type="text" id="from" class="form-control input-sm datepicker" value="{{ $today }}">
+                <input type="text" id="from" class="form-control input-sm datepicker" value="{{ $weekAgo }}">
             </div>
         </div>
         <div class="col-md-3">

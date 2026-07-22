@@ -40,8 +40,26 @@
             </div>
         </div>
 
+        @if (session('duplicate_warning'))
+            @php $dup = session('duplicate_warning'); @endphp
+            <div class="alert alert-warning" style="border-left: 4px solid {{ $dup['level'] === 'high' ? '#e74c3c' : ($dup['level'] === 'medium' ? '#f39c12' : '#f1c40f') }};">
+                <strong>Possible Duplicate Found ({{ $dup['label'] }} confidence):</strong><br>
+                Job <a href="{{ url('admin/jobs/' . $dup['job_no'] . '/view') }}" target="_blank"><strong>#{{ $dup['job_no'] }}</strong></a>
+                — {{ \Illuminate\Support\Str::limit($dup['title'], 80) }}
+                — Status: {{ $dup['status'] }}
+                — Created: {{ $dup['date'] }}<br>
+                <small>You can still create this job by clicking "Create Anyway" below.</small>
+            </div>
+        @endif
+
         <form action="{{ url('admin/jobs/create') }}" method="POST" class="tw-mb-5">
             @csrf
+            @if (session('duplicate_warning'))
+                <input type="hidden" name="skip_duplicate_check" value="1">
+                <div class="text-right tw-mb-3">
+                    <button type="submit" class="btn btn-warning"><i class="fa fa-exclamation-triangle"></i> Create Anyway (Ignore Duplicate)</button>
+                </div>
+            @endif
 
             <div class="row">
                 <div class="col-md-6">
@@ -108,7 +126,7 @@
                         <label for="job_category_id">Job Category :</label>
                         <select name="job_category_id" id="job_category_id" class="form-control input-sm">
                             @foreach ($job_cat_list as $id => $name)
-                                <option value="{{ $id }}" {{ (int) old('job_category_id') === $id ? 'selected' : '' }}>{{ $name }}</option>
+                                <option value="{{ $id }}" {{ (int) old('job_category_id', $prefill_category_id ?? 0) === $id ? 'selected' : '' }}>{{ $name }}</option>
                             @endforeach
                         </select>
                         @error('job_category_id') <span class="help-block">{{ $message }}</span> @enderror
@@ -119,7 +137,7 @@
                         <label for="prefecture_id">Prefecture :</label>
                         <select name="prefecture_id" id="prefecture_id" class="form-control input-sm select2">
                             @foreach ($prefecture_list as $id => $name)
-                                <option value="{{ $id }}" {{ (int) old('prefecture_id') === $id ? 'selected' : '' }}>{{ $name }}</option>
+                                <option value="{{ $id }}" {{ (int) old('prefecture_id', $prefill_prefecture_id ?? 0) === $id ? 'selected' : '' }}>{{ $name }}</option>
                             @endforeach
                         </select>
                         @error('prefecture_id') <span class="help-block">{{ $message }}</span> @enderror
@@ -130,7 +148,7 @@
                         <label for="area_id">Area :</label>
                         <select name="area_id" id="area_id" class="form-control input-sm select2">
                             @foreach ($area_list as $id => $name)
-                                <option value="{{ $id }}" {{ (int) old('area_id') === $id ? 'selected' : '' }}>{{ $name }}</option>
+                                <option value="{{ $id }}" {{ (int) old('area_id', $prefill_area_id ?? 0) === $id ? 'selected' : '' }}>{{ $name }}</option>
                             @endforeach
                         </select>
                         @error('area_id') <span class="help-block">{{ $message }}</span> @enderror

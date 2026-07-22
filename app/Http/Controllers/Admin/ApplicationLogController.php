@@ -27,10 +27,12 @@ class ApplicationLogController extends Controller
         }
 
         $today = now()->format('d/m/Y');
+        $weekAgo = now()->subDays(7)->format('d/m/Y');
 
         return view('admin.application-logs.index', [
             'activeSideMenu' => 'application_logs',
             'today'          => $today,
+            'weekAgo'        => $weekAgo,
         ]);
     }
 
