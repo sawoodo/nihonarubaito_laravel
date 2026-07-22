@@ -74,19 +74,34 @@ class JobController extends Controller
         // Active job (status 3) or Quota Full (status 6) → 200
         $jobSlug = Str::slug(strtolower("{$langName}-{$job->title}"));
 
+        // 301 redirect bare /jobs/{id}/detail → /jobs/{id}/detail/{slug}
+        // Preserves query strings (utm_source=fb etc) for GA4 tracking
+        if (!$slug || $slug !== $jobSlug) {
+            $queryString = request()->getQueryString();
+            $redirectUrl = url("jobs/{$jobNo}/detail/{$jobSlug}");
+            if ($queryString) {
+                $redirectUrl .= '?' . $queryString;
+            }
+            return redirect($redirectUrl, 301);
+        }
+        $breadcrumbData = $this->createBreadcrumb($job, $langName);
+
         return view('jobs.detail', [
             'job' => $job,
             'related_jobs' => $relatedJobs,
-            'page_title' => "{$job->title} | Nihon Arubaito",
+            'page_title' => Str::limit($job->title, 42) . ' | Nihon Arubaito',
             'page_description' => $job->description,
             'og_title' => $job->title,
             'og_description' => $job->description,
-            'og_image' => url("frontend/images/jobs/original/{$job->images_img_name}{$job->images_img_ext}"),
-            'og_url' => $request->url(),
-            'canonical' => $request->url(),
+            'og_image' => ($job->images_img_name && $job->images_img_ext)
+                ? url("frontend/images/jobs/{$job->images_img_name}{$job->images_img_ext}")
+                : url('frontend/images/og-default.png'),
+            'og_url' => url("jobs/{$jobNo}/detail/{$jobSlug}"),
+            'canonical' => url("jobs/{$jobNo}/detail/{$jobSlug}"),
             'keywords' => "Part time jobs in {$job->area_name} {$job->prefecture_name} Japan, jobs listings japan, jobs Opportunities japan, Nihon Arubaito, Baito, Part-time job for foreigners",
             'schema_script' => $this->createSchema($job),
-            'breadcrumb' => $this->createBreadcrumb($job, $langName),
+            'breadcrumb' => $breadcrumbData['html'],
+            'breadcrumbItems' => $breadcrumbData['items'],
             'active_nav' => 'jobs',
             'load_value_commerce' => true,
         ]);
@@ -245,7 +260,17 @@ class JobController extends Controller
         $datePosted = $job->date ? $job->date->format('Y-m-d') : '';
         $validThrough = $job->delete_at ? $job->delete_at->format('Y-m-d\TH:i') : '';
         $description = htmlentities(strip_tags($job->description ?? ''), ENT_QUOTES, 'UTF-8');
-        $salary = preg_replace('/[^0-9]/', '', $job->wage ?? '');
+
+        $address = [
+            '@type' => 'PostalAddress',
+            'streetAddress' => $job->address ?? '',
+            'addressLocality' => $job->area_name,
+            'addressRegion' => $job->prefecture_name,
+            'addressCountry' => 'JP',
+        ];
+        if (!empty($job->area_postal_code)) {
+            $address['postalCode'] = $job->area_postal_code;
+        }
 
         $schema = [
             '@context' => 'https://schema.org/',
@@ -267,49 +292,56 @@ class JobController extends Controller
             'validThrough' => $validThrough,
             'jobLocation' => [
                 '@type' => 'Place',
-                'address' => [
-                    '@type' => 'PostalAddress',
-                    'streetAddress' => $job->address ?? '',
-                    'addressLocality' => $job->area_name,
-                    'addressRegion' => $job->prefecture_name,
-                    'addressCountry' => 'JP',
-                ],
+                'address' => $address,
             ],
             'applicantLocationRequirements' => [
                 '@type' => 'Country',
                 'name' => 'Japan',
             ],
-            'baseSalary' => [
+        ];
+
+        // Add baseSalary only if parseable (shared static parser from Job model)
+        $baseSalaryValue = Job::parseBaseSalaryLd($job->wage);
+        if ($baseSalaryValue) {
+            $schema['baseSalary'] = [
                 '@type' => 'MonetaryAmount',
                 'currency' => 'JPY',
-                'value' => [
-                    '@type' => 'QuantitativeValue',
-                    'value' => (int) $salary,
-                    'unitText' => 'HOUR',
-                ],
-            ],
-        ];
+                'value' => $baseSalaryValue,
+            ];
+        }
 
         $json = json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
         return "<script type=\"application/ld+json\">\n{$json}\n</script>";
     }
 
-    private function createBreadcrumb(Job $job, string $langName): string
+    private function createBreadcrumb(Job $job, string $langName): array
     {
         $prefectureName = $job->prefecture_name ?? '';
         $areaName = $job->area_name ?? '';
         $slug = Str::slug(strtolower("{$langName}-{$job->title}"));
 
         $homeUrl = url('/');
-        $prefectureUrl = url("jobs/search?query=&prefecture_id={$job->prefecture_id}&area_id=0");
-        $areaUrl = url("jobs/search?query=&prefecture_id={$job->prefecture_id}&area_id={$job->area_id}");
 
-        return '<ol class="breadcrumb tw-mt-8">'
+        // Search-based URLs for visual breadcrumb links (match CI3)
+        $prefSearchUrl = url("jobs/search?query=&prefecture_id={$job->prefecture_id}&area_id=0");
+        $areaSearchUrl = url("jobs/search?query=&prefecture_id={$job->prefecture_id}&area_id={$job->area_id}");
+
+        $html = '<ol class="breadcrumb tw-mt-8">'
             . '<li><a href="' . e($homeUrl) . '">Home</a></li>'
-            . '<li><a href="' . e($prefectureUrl) . '">' . e($prefectureName) . '</a></li>'
-            . '<li><a href="' . e($areaUrl) . '">' . e($areaName) . '</a></li>'
+            . '<li><a href="' . e($prefSearchUrl) . '">' . e($prefectureName) . '</a></li>'
+            . '<li><a href="' . e($areaSearchUrl) . '">' . e($areaName) . '</a></li>'
             . '<li class="active">Job No. ' . e($job->job_no) . '</li>'
             . '</ol>';
+
+        // Schema items use clean slug URLs (better for SEO)
+        $items = [
+            ['name' => 'Home', 'url' => $homeUrl],
+            ['name' => $prefectureName, 'url' => url('part-time-jobs-in-' . strtolower($prefectureName))],
+            ['name' => $areaName, 'url' => url('part-time-jobs-in-' . strtolower(str_replace(' ', '-', $areaName)))],
+            ['name' => $job->title],
+        ];
+
+        return ['html' => $html, 'items' => $items];
     }
 }

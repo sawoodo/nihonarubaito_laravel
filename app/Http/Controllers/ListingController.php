@@ -11,6 +11,7 @@ use App\Models\Prefecture;
 use App\Models\Region;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ListingController extends Controller
 {
@@ -67,7 +68,7 @@ class ListingController extends Controller
         // Categories for search form
         $jobCategories = Category::all();
 
-        $title = 'Part-time Jobs for foreigners in Japan | Nihon Arubaito';
+        $title = 'Part-Time Jobs in Japan for Foreigners | Nihon Arubaito';
 
         return view('listings.index', [
             'jobs'            => $jobs,
@@ -83,8 +84,9 @@ class ListingController extends Controller
             'breadcrumb'      => '',
             'page_title'      => $title,
             'og_title'        => $title,
-            'og_description'  => 'Nihonarubaito is helping foreigners to get part-time jobs in japan, Jobs are in English, Vietnamese and Japanese find the best part-time job for you!',
-            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Restaurant, Convenience Store) through japan\'s leading job site.',
+            'og_description'  => 'Part-time & hand cash jobs across Japan for foreign residents. Browse 3,000+ job listings in Tokyo, Osaka, Saitama and beyond.',
+            'og_type'         => 'website',
+            'page_description' => 'Find part-time & hand cash jobs near you in Japan — restaurant, warehouse, hotel cleaning across all 47 prefectures. For foreigners, no kanji required.',
             'og_image'        => 'https://nihonarubaito.com/frontend/images/main-og-title.png',
             'og_url'          => 'https://nihonarubaito.com/',
             'canonical'       => 'https://nihonarubaito.com/',
@@ -112,7 +114,7 @@ class ListingController extends Controller
                 // Empty query + prefecture + area → area page
                 $area = DB::table('areas')->where('id', $areaId)->first();
                 if ($area) {
-                    $areaSlug = strtolower(str_replace(' ', '-', $area->english));
+                    $areaSlug = Str::slug($area->english);
                     return redirect("part-time-jobs-in-{$areaSlug}", 301);
                 }
             }
@@ -120,7 +122,7 @@ class ListingController extends Controller
                 // Empty query + prefecture (no area or area=0) → prefecture page
                 $pref = Prefecture::find($prefectureId);
                 if ($pref) {
-                    $prefSlug = strtolower($pref->english);
+                    $prefSlug = Str::slug($pref->english);
                     return redirect("part-time-jobs-in-{$prefSlug}", 301);
                 }
             }
@@ -181,10 +183,10 @@ class ListingController extends Controller
             'breadcrumb'      => '',
             'page_title'      => $title,
             'og_title'        => $title,
-            'og_description'  => 'Nihonarubaito is helping foreigners to get part-time jobs in japan, Jobs are in English, Vietnamese and Japanese find the best part-time job for you!',
-            'page_description' => 'Nihonarubaito is providing best part-time jobs in Japan. Browse your favorite job (Lightwork, Restaurant, Convenience Store) through japan\'s leading job site.',
+            'og_description'  => 'Search part-time jobs in Japan for foreigners. Filter by prefecture, area, and job category on Nihon Arubaito.',
+            'page_description' => 'Search part-time jobs in Japan for foreigners. Filter by prefecture, area, and category. Restaurant, warehouse, hotel cleaning, and convenience store positions available.',
             'og_image'        => 'https://nihonarubaito.com/frontend/images/main-og-title.png',
-            'og_url'          => 'https://nihonarubaito.com',
+            'og_url'          => $canonical ?? 'https://nihonarubaito.com/',
             'keywords'        => 'Find Part time jobs in japan, Find Work in Japan, jobs Opportunities japan, Part time job portal in japan, Nihon Arubaito, Baito, Jobs for foreigners in japan',
             'canonical'       => $canonical,
             'noindex'         => true,
@@ -237,6 +239,11 @@ class ListingController extends Controller
         if (isset($uri['location'])) {
             $location = str_replace('-', ' ', $uri['location']);
 
+            // 410 Gone for garbage URLs (crawler artifacts with dropdown placeholder text)
+            if (preg_match('/\b(select|please)\b/i', $location)) {
+                abort(410);
+            }
+
             // Try prefecture first
             $prefecture = Prefecture::whereRaw('LOWER(english) = ?', [strtolower($location)])->first();
             $prefectureId = $prefecture ? $prefecture->id : 0;
@@ -247,6 +254,14 @@ class ListingController extends Controller
                 if ($area) {
                     $areaId = $area->id;
                     $prefectureId = $area->prefecture_id;
+
+                    // 301 redirect if URL slug doesn't match canonical area slug (SEO: avoid duplicate content)
+                    $canonicalAreaSlug = Str::slug($area->english);
+                    if (strtolower($uri['location']) !== $canonicalAreaSlug) {
+                        $canonicalSlug = "{$uri['query']}-{$uri['job']}-in-{$canonicalAreaSlug}";
+                        $canonicalUrl = $page && $page > 1 ? "{$canonicalSlug}/page/{$page}" : $canonicalSlug;
+                        return redirect($canonicalUrl, 301);
+                    }
                 }
             }
 
@@ -262,7 +277,7 @@ class ListingController extends Controller
 
         $isStationPage = isset($uri['preposition']) && $uri['preposition'] === 'at';
         $query = str_replace('-', ' ', $uri['query']);
-        $uriLocation = isset($uri['location']) ? str_replace('-', ' ', $uri['location']) : '';
+        $uriLocation = isset($uri['location']) ? ucwords(str_replace('-', ' ', $uri['location'])) : '';
 
         // For station pages, use the station query as the location for SEO
         if ($isStationPage && empty($uriLocation)) {
@@ -270,7 +285,7 @@ class ListingController extends Controller
         }
 
         $jobQuery = ucwords(str_replace('-', ' ', $uri['query']));
-        $locationName = ucwords($uriLocation);
+        $locationName = $uriLocation; // already ucwords
         $title = $isStationPage
             ? "Part-Time Jobs near {$locationName}"
             : "{$jobQuery} Jobs" . ($locationName ? " in {$locationName}" : '');
@@ -284,8 +299,12 @@ class ListingController extends Controller
             ->take(self::PER_PAGE)
             ->get();
 
-        // Blog post matching this slug
+        // Blog post matching this slug (with dynamic data replacement)
         $blogPost = BlogPost::where('slug', $slug)->where('lang_id', $langId)->first();
+        if ($blogPost && $prefectureId && str_contains($blogPost->post ?? '', '{{')) {
+            $dynamicData = $this->getPrefectureDynamicData($prefectureId);
+            $blogPost->post = $this->replaceBlogTemplateVars($blogPost->post, $dynamicData);
+        }
 
         // Nearby prefectures (only for prefecture pages, not station/area pages)
         $neighbors = collect();
@@ -328,7 +347,7 @@ class ListingController extends Controller
         $jobCategories = Category::all();
 
         // SEO: station map for meta description
-        $locationSlug = strtolower(str_replace(' ', '-', $uriLocation));
+        $locationSlug = Str::slug($uriLocation);
         $popularLocations = self::STATION_MAP[$locationSlug] ?? $uriLocation;
 
         $maxLength = 100;
@@ -340,15 +359,23 @@ class ListingController extends Controller
             $popularLocations .= ', and more';
         }
 
+        // Min wage for meta description
+        $minWage = 0;
+        if ($jobs->isNotEmpty()) {
+            $rawWage = $jobs->min('wage');
+            preg_match('/[0-9,]+/', $rawWage ?? '', $m);
+            $minWage = isset($m[0]) ? (int) str_replace(',', '', $m[0]) : 0;
+        }
+
         $ogDescription = $isStationPage
-            ? "Find flexible and high-paying part-time jobs near {$uriLocation} in Japan. Browse the latest listings and apply today with Nihon Arubaito!"
-            : $this->generateMetaDescription($uriLocation, $query, self::STATION_MAP);
+            ? "Find part-time jobs near {$locationName} for foreigners." . ($totalRows > 0 ? " " . number_format($totalRows) . " active listings." : '') . ($minWage > 0 ? " Jobs from ¥" . number_format($minWage) . "/hr." : '') . " Apply on Nihon Arubaito."
+            : $this->generateMetaDescription($locationName, $query, self::STATION_MAP, $totalRows, $minWage);
         $keywords = "{$query} jobs in {$uriLocation}, part-time jobs, {$popularLocations}, jobs for foreigners";
 
         // Intro paragraph
         $introQuery = ucwords($query);
         $introParagraph = "Explore the best {$introQuery} jobs";
-        $introParagraph .= $uriLocation ? " in {$uriLocation}" : '';
+        $introParagraph .= $locationName ? " in {$locationName}" : '';
         $introParagraph .= ' suitable for foreigners and international students. Find flexible roles in popular areas';
         $introParagraph .= $popularLocations ? " such as {$popularLocations}." : '.';
         $introParagraph .= ' Apply today and start earning!';
@@ -357,7 +384,7 @@ class ListingController extends Controller
         $structuredData = $this->buildStructuredData($jobs, $title, $ogDescription);
 
         // Breadcrumb
-        $breadcrumb = $this->buildBreadcrumb($prefectures, $prefectureId, $areaId, $area, $query, $uri, $langName);
+        $breadcrumbData = $this->buildBreadcrumb($prefectures, $prefectureId, $areaId, $area, $query, $uri, $langName);
 
         // Pagination base URL
         $paginationBaseUrl = url("{$slug}/page");
@@ -396,7 +423,8 @@ class ListingController extends Controller
             'page_heading'     => $title,
             'intro_paragraph'  => $introParagraph,
             'structured_data'  => $structuredData,
-            'breadcrumb'       => $breadcrumb,
+            'breadcrumb'       => $breadcrumbData['html'],
+            'breadcrumbItems'  => $breadcrumbData['items'],
             'active_nav'       => 'jobs',
             'neighbors'        => $neighbors,
             'faq_items'        => $faqItems,
@@ -411,19 +439,25 @@ class ListingController extends Controller
     {
         $parts = explode(' ', $name);
 
-        $query = DB::table('areas as a')
+        $baseQuery = fn() => DB::table('areas as a')
             ->join('towns as t', 'a.town_id', '=', 't.id')
             ->join('prefectures as p', 't.prefecture_id', '=', 'p.id')
             ->select('a.*', 'p.id as prefecture_id', 'p.english as prefecture');
 
         if (count($parts) > 1) {
+            // Try exact REGEXP first (e.g. "chiyoda ku" → "chiyoda[- ]ku")
             $pattern = implode('[- ]', $parts);
-            $query->whereRaw("a.english REGEXP ?", [$pattern]);
-        } else {
-            $query->where('a.english', 'LIKE', "%{$parts[0]}%");
+            $result = $baseQuery()->whereRaw("a.english REGEXP ?", [$pattern])->first();
+
+            // Fallback: LIKE on first word only (e.g. "chiyoda ward" → finds "Chiyoda-ku")
+            if (!$result) {
+                $result = $baseQuery()->where('a.english', 'LIKE', "{$parts[0]}%")->first();
+            }
+
+            return $result;
         }
 
-        return $query->first();
+        return $baseQuery()->where('a.english', 'LIKE', "%{$parts[0]}%")->first();
     }
 
     /**
@@ -431,13 +465,19 @@ class ListingController extends Controller
      */
     private function getRegionsGrouped(string $langName): array
     {
+        $select = ["r.{$langName}", "p.id as prefecture_id", "p.english as prefecture_slug"];
+        if ($langName !== 'english') {
+            $select[] = "p.{$langName} as prefecture";
+        }
+
         $results = DB::table('regions as r')
             ->join('prefectures as p', 'r.id', '=', 'p.region_id')
-            ->select("r.{$langName}", "p.id as prefecture_id", "p.{$langName} as prefecture")
+            ->select($select)
             ->get();
 
         $regions = [];
         foreach ($results as $item) {
+            $item->prefecture = $item->prefecture ?? $item->prefecture_slug;
             $regions[$item->$langName][] = $item;
         }
 
@@ -449,18 +489,26 @@ class ListingController extends Controller
      */
     private function getPopularAreasGrouped(string $langName): array
     {
+        $select = ["a.id as area_id", "a.english as area_slug", "p.id as prefecture_id", "p.english as prefecture_slug"];
+        if ($langName !== 'english') {
+            $select[] = "a.{$langName} as area";
+            $select[] = "p.{$langName} as prefecture";
+        }
+
         $results = DB::table('popular_areas as pa')
             ->join('areas as a', 'pa.area_id', '=', 'a.id')
             ->join('towns as t', 'a.town_id', '=', 't.id')
             ->join('prefectures as p', 't.prefecture_id', '=', 'p.id')
-            ->select("a.id as area_id", "a.{$langName} as area", "p.id as prefecture_id", "p.{$langName} as prefecture")
+            ->select($select)
             ->get();
 
         $grouped = [];
         foreach ($results as $item) {
-            $grouped[$item->prefecture][] = (object) [
+            $prefName = $item->prefecture ?? $item->prefecture_slug;
+            $grouped[$prefName][] = (object) [
                 'area_id' => $item->area_id,
-                'area' => $item->area,
+                'area' => $item->area ?? $item->area_slug,
+                'area_slug' => $item->area_slug,
             ];
         }
 
@@ -476,13 +524,23 @@ class ListingController extends Controller
             return [];
         }
 
+        $select = ["a.id as area_id", "a.english as area_slug"];
+        if ($langName !== 'english') {
+            $select[] = "a.{$langName} as area";
+        }
+
         return DB::table('popular_areas as pa')
             ->join('areas as a', 'pa.area_id', '=', 'a.id')
             ->join('towns as t', 'a.town_id', '=', 't.id')
             ->join('prefectures as p', 't.prefecture_id', '=', 'p.id')
             ->where('p.id', $prefectureId)
-            ->select("a.id as area_id", "a.{$langName} as area")
+            ->select($select)
             ->get()
+            ->map(fn ($item) => (object) [
+                'area_id' => $item->area_id,
+                'area' => $item->area ?? $item->area_slug,
+                'area_slug' => $item->area_slug,
+            ])
             ->all();
     }
 
@@ -500,31 +558,142 @@ class ListingController extends Controller
     }
 
     /**
-     * Generate SEO-friendly meta description (replicates CI3 generate_meta_description).
+     * Get dynamic data for a prefecture to replace template variables in blog content.
+     * Cached for 1 hour to minimize DB load.
      */
-    private function generateMetaDescription(string $location, string $query, array $locationsArray, int $charLimit = 160): string
+    private function getPrefectureDynamicData(int $prefectureId): array
     {
-        $locationSlug = strtolower(str_replace(' ', '-', $location));
-        $popularLocations = isset($locationsArray[$locationSlug])
-            ? explode(',', $locationsArray[$locationSlug])
-            : [$location];
-
-        $baseDesc = "Find flexible and high-paying {$query} jobs in {$location} near popular stations like ";
-        $desc = $baseDesc;
-
-        foreach ($popularLocations as $station) {
-            $station = trim($station);
-            if (strlen($desc . $station . ', ') <= $charLimit - 20) {
-                $desc .= "{$station}, ";
-            } else {
-                break;
-            }
+        if ($prefectureId <= 0) {
+            return [];
         }
 
-        $desc = rtrim($desc, ', ') . '. Apply now with Nihon Arubaito!';
+        $cacheKey = "prefecture_dynamic_{$prefectureId}";
 
-        if (strlen($desc) > $charLimit) {
-            $desc = substr($desc, 0, $charLimit - 3) . '...';
+        return cache()->remember($cacheKey, 3600, function () use ($prefectureId) {
+            $jobs = DB::table('jobs')
+                ->where('prefecture_id', $prefectureId)
+                ->where('job_status_id', 3)
+                ->selectRaw("
+                    COUNT(*) as total,
+                    SUM(CASE WHEN job_category_id = 1 THEN 1 ELSE 0 END) as packing,
+                    SUM(CASE WHEN job_category_id = 2 THEN 1 ELSE 0 END) as restaurant,
+                    SUM(CASE WHEN job_category_id = 3 THEN 1 ELSE 0 END) as konbini,
+                    SUM(CASE WHEN job_category_id = 4 THEN 1 ELSE 0 END) as bedmaking,
+                    SUM(CASE WHEN job_category_id = 5 THEN 1 ELSE 0 END) as delivery
+                ")
+                ->first();
+
+            // Wage range: parse numeric values from strings like "1,200円" or "1200円～1500円"
+            $wageRows = DB::table('jobs')
+                ->where('prefecture_id', $prefectureId)
+                ->where('job_status_id', 3)
+                ->where('wage_type_id', 1)
+                ->pluck('wage');
+
+            $parsedWages = $wageRows->map(function ($w) {
+                preg_match('/[\d,]+/', $w ?? '', $m);
+                return isset($m[0]) ? (int) str_replace(',', '', $m[0]) : 0;
+            })->filter(fn($w) => $w > 500);
+
+            $minWage = $parsedWages->min() ?: 0;
+            $maxWage = $parsedWages->max() ?: 0;
+
+            // Subscribers interested in this prefecture
+            $subscribers = DB::table('job_location_preferences')
+                ->where('prefecture_id', $prefectureId)
+                ->distinct('user_id')
+                ->count('user_id');
+
+            // Total conversions (join via job_no)
+            $conversions = DB::table('application_logs')
+                ->join('jobs', 'application_logs.job_no', '=', 'jobs.job_no')
+                ->where('jobs.prefecture_id', $prefectureId)
+                ->count();
+
+            $secondaryConversions = DB::table('secondary_applies')
+                ->join('jobs', 'secondary_applies.job_no', '=', 'jobs.job_no')
+                ->where('jobs.prefecture_id', $prefectureId)
+                ->count();
+
+            // Restaurant conversions
+            $restaurantConversions = DB::table('application_logs')
+                ->join('jobs', 'application_logs.job_no', '=', 'jobs.job_no')
+                ->where('jobs.prefecture_id', $prefectureId)
+                ->where('jobs.job_category_id', 2)
+                ->count();
+
+            $restaurantSecondary = DB::table('secondary_applies')
+                ->join('jobs', 'secondary_applies.job_no', '=', 'jobs.job_no')
+                ->where('jobs.prefecture_id', $prefectureId)
+                ->where('jobs.job_category_id', 2)
+                ->count();
+
+            return [
+                'active_jobs' => number_format($jobs->total ?? 0),
+                'active_restaurant' => number_format($jobs->restaurant ?? 0),
+                'active_packing' => number_format($jobs->packing ?? 0),
+                'active_bedmaking' => number_format($jobs->bedmaking ?? 0),
+                'active_konbini' => number_format($jobs->konbini ?? 0),
+                'active_delivery' => number_format($jobs->delivery ?? 0),
+                'min_wage' => number_format($minWage),
+                'max_wage' => number_format($maxWage),
+                'total_subscribers' => number_format($subscribers),
+                'total_conversions' => number_format($conversions + $secondaryConversions),
+                'restaurant_conversions' => number_format($restaurantConversions + $restaurantSecondary),
+            ];
+        });
+    }
+
+    /**
+     * Replace {{template_vars}} in blog post content with live data.
+     */
+    private function replaceBlogTemplateVars(?string $content, array $dynamicData): string
+    {
+        if (empty($content) || empty($dynamicData) || !str_contains($content, '{{')) {
+            return $content ?? '';
+        }
+
+        foreach ($dynamicData as $key => $value) {
+            $content = str_replace('{{' . $key . '}}', $value, $content);
+        }
+
+        return $content;
+    }
+
+    /**
+     * Generate SEO-friendly meta description (replicates CI3 generate_meta_description).
+     */
+    private function generateMetaDescription(string $location, string $query, array $locationsArray, int $jobCount = 0, int $minWage = 0): string
+    {
+        $locationSlug = Str::slug($location);
+        $stations = isset($locationsArray[$locationSlug])
+            ? explode(',', $locationsArray[$locationSlug])
+            : [];
+
+        $desc = "Find {$query} jobs in {$location} for foreigners.";
+
+        if ($jobCount > 0) {
+            $desc .= " " . number_format($jobCount) . " active listings";
+            if (!empty($stations)) {
+                $stationStr = trim($stations[0]);
+                if (isset($stations[1])) {
+                    $stationStr .= ', ' . trim($stations[1]);
+                }
+                $desc .= " near {$stationStr}";
+            }
+            $desc .= '.';
+        }
+
+        if ($minWage > 0) {
+            $desc .= " Restaurant, warehouse, hotel cleaning jobs from ¥" . number_format($minWage) . "/hr.";
+        } else {
+            $desc .= " Restaurant, warehouse, and hotel cleaning jobs available.";
+        }
+
+        $desc .= " Apply on Nihon Arubaito.";
+
+        if (strlen($desc) > 160) {
+            $desc = substr($desc, 0, 157) . '...';
         }
 
         return $desc;
@@ -590,7 +759,21 @@ class ListingController extends Controller
         $jobPostings = [];
 
         foreach ($jobs as $job) {
-            $jobPostings[] = [
+            // Parse baseSalary using static helper (works on stdClass from joins)
+            $baseSalaryValue = Job::parseBaseSalaryLd($job->wage);
+
+            $address = [
+                '@type' => 'PostalAddress',
+                'streetAddress' => htmlspecialchars($job->address ?? ''),
+                'addressLocality' => htmlspecialchars($job->area_name ?? ''),
+                'addressRegion' => $job->prefecture_name ? htmlspecialchars($job->prefecture_name) : 'Japan',
+                'addressCountry' => 'JP',
+            ];
+            if (!empty($job->area_postal_code)) {
+                $address['postalCode'] = $job->area_postal_code;
+            }
+
+            $jobPosting = [
                 '@type' => 'JobPosting',
                 'title' => htmlspecialchars($job->title),
                 'description' => htmlspecialchars(substr(strip_tags($job->description), 0, 160)),
@@ -604,24 +787,20 @@ class ListingController extends Controller
                 ],
                 'jobLocation' => [
                     '@type' => 'Place',
-                    'address' => [
-                        '@type' => 'PostalAddress',
-                        'streetAddress' => htmlspecialchars($job->address ?? ''),
-                        'addressLocality' => htmlspecialchars($job->area_name ?? ''),
-                        'addressRegion' => $job->prefecture_name ? htmlspecialchars($job->prefecture_name) : 'Japan',
-                        'addressCountry' => 'JP',
-                    ],
-                ],
-                'baseSalary' => [
-                    '@type' => 'MonetaryAmount',
-                    'currency' => 'JPY',
-                    'value' => [
-                        '@type' => 'QuantitativeValue',
-                        'value' => $job->wage,
-                        'unitText' => 'HOUR',
-                    ],
+                    'address' => $address,
                 ],
             ];
+
+            // Add baseSalary only if parseable (absent is valid; malformed is penalized)
+            if ($baseSalaryValue) {
+                $jobPosting['baseSalary'] = [
+                    '@type' => 'MonetaryAmount',
+                    'currency' => 'JPY',
+                    'value' => $baseSalaryValue,
+                ];
+            }
+
+            $jobPostings[] = $jobPosting;
         }
 
         return json_encode([
@@ -648,11 +827,13 @@ class ListingController extends Controller
     /**
      * Build breadcrumb HTML for slug-based listing pages.
      */
-    private function buildBreadcrumb(array $prefectures, int $prefectureId, int $areaId, ?object $area, string $query, array $uri, string $langName): string
+    private function buildBreadcrumb(array $prefectures, int $prefectureId, int $areaId, ?object $area, string $query, array $uri, string $langName): array
     {
         $prefectureName = $prefectureId > 0 ? ($prefectures[$prefectureId] ?? '') : '';
         $querySlug = ($query && $query !== 'xxx') ? str_replace(' ', '-', $query) : '';
-        $prefectureSlug = strtolower($prefectureName);
+        $prefectureSlug = Str::slug($prefectureName);
+
+        $items = [['name' => 'Home', 'url' => url('/')]];
 
         $html = '<ol class="breadcrumb tw-mt-8">';
         $html .= '<li><a href="' . e(url('/')) . '">Home</a></li>';
@@ -661,19 +842,21 @@ class ListingController extends Controller
         if ($prefectureName) {
             $prefUrl = url("{$querySlug}-jobs-in-{$prefectureSlug}");
             $html .= '<li><a href="' . e($prefUrl) . '">' . e($prefectureName) . '</a></li>';
+            $items[] = ['name' => $prefectureName, 'url' => $prefUrl];
         }
 
         // Area crumb
         if ($areaId && $area) {
             $areaName = $area->$langName ?? $area->english ?? '';
-            $areaSlug = strtolower(str_replace(' ', '-', $areaName));
+            $areaSlug = Str::slug($areaName);
             $areaUrl = url("{$querySlug}-jobs-in-{$areaSlug}");
             $html .= '<li><a href="' . e($areaUrl) . '">' . e($areaName) . '</a></li>';
+            $items[] = ['name' => $areaName, 'url' => $areaUrl];
         }
 
         $html .= '</ol>';
 
-        return $html;
+        return ['html' => $html, 'items' => $items];
     }
 
     /**

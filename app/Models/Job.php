@@ -105,6 +105,11 @@ class Job extends Model
         return $this->hasMany(SecondaryApply::class, 'job_no', 'job_no');
     }
 
+    public function tags()
+    {
+        return $this->belongsToMany(Tag::class, 'job_tag', 'job_id', 'tag_id');
+    }
+
     public function isActive(): bool
     {
         return $this->job_status_id === self::STATUS_PUBLISHED;
@@ -161,6 +166,7 @@ class Job extends Model
                 'jobs.*',
                 "p.{$langName} as prefecture_name",
                 "a.{$langName} as area_name",
+                'a.postal_code as area_postal_code',
                 "t.{$langName} as trans_exp_name",
                 "jc.{$langName} as category_name",
                 "w.{$langName} as wage_type_name",
@@ -346,5 +352,183 @@ class Job extends Model
         $title = preg_replace('/[^a-z0-9\s-]/', '', $title);
         $title = preg_replace('/[\s-]+/', '-', $title);
         return "{$langName}-{$title}";
+    }
+
+    /**
+     * Parse wage string into Schema.org baseSalary QuantitativeValue format.
+     * Returns array for use inside MonetaryAmount->value, or null if unparseable.
+     *
+     * @param string|null $wage Raw wage string from jobs.wage column
+     * @return array|null QuantitativeValue array, or null to omit baseSalary
+     *
+     * Examples:
+     *   "1,270円" -> ['@type' => 'QuantitativeValue', 'value' => 1270, 'unitText' => 'HOUR']
+     *   "時給1,500円" -> ['@type' => 'QuantitativeValue', 'value' => 1500, 'unitText' => 'HOUR']
+     *   "1,600円～2,000円" -> ['@type' => 'QuantitativeValue', 'minValue' => 1600, 'maxValue' => 2000, 'unitText' => 'HOUR']
+     *   "1,450円以上" -> ['@type' => 'QuantitativeValue', 'value' => 1450, 'unitText' => 'HOUR']
+     *   "時給1,141円〜" -> ['@type' => 'QuantitativeValue', 'value' => 1141, 'unitText' => 'HOUR']
+     *   "時給1,075円（研修中）/ 本採用後 時給1,130円～" -> ['@type' => 'QuantitativeValue', 'value' => 1130, 'unitText' => 'HOUR']
+     *   "日給9,000円" -> ['@type' => 'QuantitativeValue', 'value' => 9000, 'unitText' => 'DAY']
+     *   "195,000円～216,000円" -> ['@type' => 'QuantitativeValue', 'minValue' => 195000, 'maxValue' => 216000, 'unitText' => 'MONTH']
+     *   "時給1,120円～ (高校生 時給1,070円～)" -> null (secondary rates without 本採用 marker)
+     */
+    public static function parseBaseSalaryLd(?string $wage): ?array
+    {
+        if (empty(trim($wage ?? ''))) {
+            return null;
+        }
+
+        // Detect unit from explicit markers (default HOUR for part-time jobs)
+        $unitText = 'HOUR';
+        $hasExplicitUnit = false;
+        if (mb_strpos($wage, '日給') !== false) {
+            $unitText = 'DAY';
+            $hasExplicitUnit = true;
+        } elseif (mb_strpos($wage, '月給') !== false) {
+            $unitText = 'MONTH';
+            $hasExplicitUnit = true;
+        } elseif (mb_strpos($wage, '時給') !== false) {
+            $hasExplicitUnit = true;
+        }
+
+        // Extract all numbers
+        preg_match_all('/\d[\d,]*/', $wage, $matches);
+        $numbers = array_map(function ($n) {
+            return (int)preg_replace('/[^0-9]/', '', $n);
+        }, $matches[0] ?? []);
+
+        if (empty($numbers)) {
+            return null;
+        }
+
+        // Auto-detect monthly based on MAX amount (only when no explicit unit)
+        if (!$hasExplicitUnit && max($numbers) > 50000) {
+            $unitText = 'MONTH';
+        }
+
+        // Detect range/bound markers
+        $hasRangeSep = preg_match('/[～〜~]/u', $wage);
+        $hasMin = mb_strpos($wage, '以上') !== false;
+        $hasMax = mb_strpos($wage, '以下') !== false;
+
+        // Semantic decision 2026-07-18: open-ended wages ("1,200円～") emit the guaranteed
+        // floor as `value` rather than minValue-without-maxValue. The floor IS the base
+        // salary (employer guarantees at least this); emitting min-only draws a Google
+        // warning on ~1,250 items, and fabricating a ceiling is prohibited. Do not "fix"
+        // this back to minValue.
+
+        // Trailing range separator — now emits value (was minValue pre-2026-07-18)
+        // Examples: "時給1,141円〜", "1,225円～"
+        if (preg_match('/[～〜~]\s*(?:（[^）]*）|\([^)]*\))?\s*$/u', $wage)) {
+            if (count($numbers) === 1) {
+                return [
+                    '@type' => 'QuantitativeValue',
+                    'value' => $numbers[0],
+                    'unitText' => $unitText,
+                ];
+            }
+        }
+
+        // "以上" with single number — now emits value (was minValue pre-2026-07-18)
+        if ($hasMin && count($numbers) === 1) {
+            return [
+                '@type' => 'QuantitativeValue',
+                'value' => $numbers[0],
+                'unitText' => $unitText,
+            ];
+        }
+
+        // "以下" with single number = maxValue only (rare)
+        if ($hasMax && count($numbers) === 1) {
+            return [
+                '@type' => 'QuantitativeValue',
+                'maxValue' => $numbers[0],
+                'unitText' => $unitText,
+            ];
+        }
+
+        // Multi-number strings - check if range separator is BETWEEN first two numbers
+        if (count($numbers) >= 2) {
+            $num1Str = (string)$numbers[0];
+            $num2Str = (string)$numbers[1];
+            $num1Pattern = number_format($numbers[0]);
+            $num2Pattern = number_format($numbers[1]);
+
+            $pos1 = mb_strpos($wage, $num1Pattern);
+            if ($pos1 === false) {
+                $pos1 = mb_strpos($wage, $num1Str);
+            }
+
+            if ($pos1 !== false) {
+                $afterFirst = mb_substr($wage, $pos1 + mb_strlen($num1Pattern));
+                $pos2InAfterFirst = mb_strpos($afterFirst, $num2Pattern);
+                if ($pos2InAfterFirst === false) {
+                    $pos2InAfterFirst = mb_strpos($afterFirst, $num2Str);
+                }
+
+                if ($pos2InAfterFirst !== false) {
+                    $between = mb_substr($afterFirst, 0, $pos2InAfterFirst);
+                    $hasRangeBetween = preg_match('/[～〜~]/u', $between);
+
+                    if ($hasRangeBetween) {
+                        // Validate: maxValue must be > minValue, else it's secondary rates
+                        if ($numbers[1] > $numbers[0]) {
+                            return [
+                                '@type' => 'QuantitativeValue',
+                                'minValue' => $numbers[0],
+                                'maxValue' => $numbers[1],
+                                'unitText' => $unitText,
+                            ];
+                        }
+                        // Invalid range (max < min) - omit
+                        return null;
+                    }
+                }
+            }
+
+            // No range separator between first two numbers = training/secondary rates
+            // Example: "時給1,075円（研修中）/ 本採用後 時給1,130円～"
+            // Prefer rate near 本採用, otherwise omit
+            if (mb_strpos($wage, '本採用') !== false) {
+                if (preg_match('/本採用[^0-9]*?([\d,]+)/u', $wage, $m)) {
+                    $afterHireValue = (int)preg_replace('/[^0-9]/', '', $m[1]);
+                    if ($afterHireValue > 0) {
+                        // Check if this number is followed by trailing range separator
+                        $afterHireFullMatch = $m[0];
+                        $afterHirePos = mb_strpos($wage, $afterHireFullMatch);
+                        $afterHireRest = mb_substr($wage, $afterHirePos);
+
+                        // both paths now emit value per 2026-07-18 decision; conditional retained for minimal diff
+                        if (preg_match('/[～〜~]\s*$/u', $afterHireRest)) {
+                            return [
+                                '@type' => 'QuantitativeValue',
+                                'value' => $afterHireValue,
+                                'unitText' => $unitText,
+                            ];
+                        }
+
+                        return [
+                            '@type' => 'QuantitativeValue',
+                            'value' => $afterHireValue,
+                            'unitText' => $unitText,
+                        ];
+                    }
+                }
+            }
+
+            // Can't determine which rate to use - omit baseSalary
+            return null;
+        }
+
+        // Single number, no special markers
+        if (count($numbers) === 1) {
+            return [
+                '@type' => 'QuantitativeValue',
+                'value' => $numbers[0],
+                'unitText' => $unitText,
+            ];
+        }
+
+        return null;
     }
 }
