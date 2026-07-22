@@ -28,7 +28,16 @@ Route::get('/contact', [PageController::class, 'contact'])->name('contact');
 Route::post('/contact', [PageController::class, 'contactSubmit']);
 
 // ── Job Detail Pages (cache 1 hour) ──
-Route::get('jobs/{jobNo}/detail/{slug?}', [JobController::class, 'detail'])->name('job.detail')->middleware('cache:3600');
+// Numeric job IDs only (current system)
+Route::get('jobs/{jobNo}/detail/{slug?}', [JobController::class, 'detail'])
+    ->name('job.detail')
+    ->middleware('cache:3600')
+    ->where('jobNo', '[0-9]+');
+
+// Legacy CI3 alphanumeric job IDs — permanently gone (migration 2022)
+Route::get('jobs/{legacyId}/detail/{slug?}', function () {
+    abort(410);
+});
 Route::match(['get', 'post'], 'jobs/{jobNo}/apply-2nd-option', [JobController::class, 'applySecondary'])->name('job.apply-secondary');
 Route::get('job/link-sent', [JobController::class, 'linkSent'])->name('job.link-sent');
 
@@ -53,6 +62,22 @@ Route::post('admin/login', [Admin\AuthController::class, 'login']);
 Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('/', fn() => redirect()->route('admin.jobs.index'));
     Route::get('logout', [Admin\AuthController::class, 'logout'])->name('admin.logout');
+
+    // Analytics (admin only)
+    Route::get('analytics', [Admin\AnalyticsController::class, 'dashboard'])->name('admin.analytics');
+    Route::get('analytics/demand-supply', [Admin\AnalyticsController::class, 'demandSupply'])->name('admin.analytics.demand-supply');
+    Route::get('analytics/demand-supply/export', [Admin\AnalyticsController::class, 'exportDemandSupplyCsv'])->name('admin.analytics.demand-supply.export');
+    Route::post('analytics/upload-ga4', [Admin\AnalyticsController::class, 'uploadGa4'])->name('admin.analytics.upload-ga4');
+    Route::get('analytics/employees', [Admin\AnalyticsController::class, 'employees'])->name('admin.analytics.employees');
+    Route::get('analytics/expiring-jobs', [Admin\AnalyticsController::class, 'expiringJobs'])->name('admin.analytics.expiring-jobs');
+    Route::post('analytics/expiring-jobs/update-date', [Admin\AnalyticsController::class, 'updateExpiringDate'])->name('admin.analytics.expiring-jobs.update-date');
+    Route::post('analytics/expiring-jobs/bulk-extend', [Admin\AnalyticsController::class, 'bulkExtendExpiring'])->name('admin.analytics.expiring-jobs.bulk-extend');
+    Route::post('analytics/expiring-jobs/trash', [Admin\AnalyticsController::class, 'trashExpiring'])->name('admin.analytics.expiring-jobs.trash');
+    Route::get('analytics/duplicates', [Admin\AnalyticsController::class, 'duplicates'])->name('admin.analytics.duplicates');
+    Route::post('analytics/duplicates/keep-and-trash', [Admin\AnalyticsController::class, 'keepAndTrash'])->name('admin.analytics.duplicates.keep-and-trash');
+    Route::post('analytics/duplicates/dismiss', [Admin\AnalyticsController::class, 'dismissGroup'])->name('admin.analytics.duplicates.dismiss');
+    Route::post('analytics/duplicates/bulk-dismiss', [Admin\AnalyticsController::class, 'bulkDismiss'])->name('admin.analytics.duplicates.bulk-dismiss');
+    Route::post('analytics/duplicates/undismiss', [Admin\AnalyticsController::class, 'undismissGroup'])->name('admin.analytics.duplicates.undismiss');
 
     // Jobs
     Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');
@@ -81,6 +106,7 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::match(['get', 'post'], 'jobs/{status?}/{langId?}/{userId?}', [Admin\JobController::class, 'index'])->name('admin.jobs.index');
 
     // Subscribers (admin only)
+    Route::get('subscribers/insights', [Admin\SubscriberController::class, 'insights'])->name('admin.subscribers.insights');
     Route::get('subscribers', [Admin\SubscriberController::class, 'index'])->name('admin.subscribers.index');
     Route::get('subscribers/page/{page}', [Admin\SubscriberController::class, 'index'])->where('page', '[0-9]+');
     Route::get('subscribers/{id}/detail', [Admin\SubscriberController::class, 'detail'])->name('admin.subscribers.detail');
@@ -139,6 +165,22 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     // Change Password (all backend users)
     Route::match(['get', 'post'], 'change-password', [Admin\PasswordController::class, 'edit'])->name('admin.change-password');
 });
+
+// ── 301 Redirects — Legacy CI3 Routes ──
+Route::get('jobs/applied', fn() => redirect('/jobs', 301));
+Route::get('jobs/preference', fn() => redirect('/jobs', 301));
+Route::get('jobs/suggested', fn() => redirect('/jobs', 301));
+Route::get('profile', fn() => redirect('/', 301));
+Route::get('account/change-password', fn() => redirect('/', 301));
+
+// ── SEO Redirects ──
+// Old station URL pattern: /jobs-at-{station} → /part-time-jobs-at-{station}
+Route::get('jobs-at-{station}', fn (string $station) => redirect("part-time-jobs-at-{$station}", 301))
+    ->where('station', '[a-zA-Z0-9-]+');
+
+// Bare /page without number → 410 Gone (broken pagination URLs)
+Route::get('{slug}/page', fn () => abort(410))
+    ->where('slug', '[a-zA-Z0-9-]+');
 
 // Catch-all slug routes (cache 30 min) — MUST be at the very bottom of web.php
 Route::middleware('cache:1800')->group(function () {

@@ -70,6 +70,11 @@ class User extends Authenticatable
         return $this->hasMany(JobLocationPreference::class);
     }
 
+    public function subscriberPreference()
+    {
+        return $this->hasOne(SubscriberPreference::class);
+    }
+
     public function getFullNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";

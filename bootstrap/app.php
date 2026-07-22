@@ -11,6 +11,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->prepend(\App\Http\Middleware\RedirectLeakedPaths::class);
         $middleware->prepend(\App\Http\Middleware\ApplyCacheHeaders::class);
 
         $middleware->validateCsrfTokens(except: [
