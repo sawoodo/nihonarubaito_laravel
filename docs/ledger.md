@@ -4,6 +4,25 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-07-22 — Widget (job-listing rich result) baseline restated
+
+**The old metric is void.** The pre-registered schema-fix success measure — "0.18% CTR on 181,725 impressions/28d" — describes a surface that no longer exists at that size.
+
+**What happened.** Rich-result impressions were *rising* through mid-July (Jul 13: 1,663 → Jul 14: 3,723 → Jul 15: 4,807), then collapsed: Jul 17: 144, Jul 18: 117, Jul 19: 179. A ~97% drop against the Jul-15 peak, same window as the desktop-impression deflation. Cause unverified; effect clear.
+
+**Markup is exonerated** — valid items held 6,431–6,725 throughout, critical issues 0, warnings decaying (postalCode 6,546→4,767; maxValue 1,502→326), and position *improved* 2.18 → 1.48. Nothing about the fix caused this.
+
+**New baseline:** ~150 impressions/day at position ~1.5. Clicks TBD — the 7-day click figure (23) spans the discontinuity and can't be split by day.
+
+**Measure schema-fix success by:**
+1. Warning decay (already effectively proven — both classes falling fast)
+2. Valid-item count holding
+3. CTR and position computed on post-Jul-17 data only
+
+**Do not use:** any impression or CTR comparison spanning Jul 16–17. The Jul 13–19 aggregate (12,981 impressions) exceeds the prior week's 6,883 purely because it includes the pre-collapse days — a week-over-week read shows +89% growth on a channel that actually fell 97%.
+
+---
+
 ## 2026-07-21 — Part G: Hamamatsu ward merge (COMPLETE)
 
 Hamamatsu reorganized 7 wards → 3 on 2024-01-01; the areas table still held the 6 defunct wards. Resolved:
