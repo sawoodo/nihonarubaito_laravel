@@ -4,6 +4,14 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-07-22 — Bulk-edit lessons (visa-hours correction, 10 pages)
+
+- **Protected-page flags belong in the exclusion list.** Kanagawa carried a DO-NOT-MODIFY flag and was still swept into a 10-page bulk edit, because the exclusion list only covered content-based exceptions (Saitama's earnings line). Standing instructions need checking *before* writing a multi-page update.
+- **Splice replaces eat conjunctions.** Replacing a mid-sentence clause consumed the preceding "and", producing a run-on on 9 pages. Conservation counts passed; the grammar didn't. Check rendered output, not just match counts.
+- **Prefecture pages are template-*similar*, not identical.** Three heading variants exist for the same section ("How Foreigners Find Jobs in {X}", "How Foreigners Find Part-Time Jobs", "How Foreign Residents Find Part-Time Jobs"). A single shared anchor silently skips pages — enumerate variants first.
+
+---
+
 ## 2026-07-22 — Widget (job-listing rich result) baseline restated
 
 **The old metric is void.** The pre-registered schema-fix success measure — "0.18% CTR on 181,725 impressions/28d" — describes a surface that no longer exists at that size.
