@@ -1,5 +1,11 @@
 @extends('layouts.frontend')
 
+@if (isset($noindex) && $noindex)
+@section('status_headers')
+    <meta name="robots" content="noindex, follow" />
+@endsection
+@endif
+
 @include('partials.breadcrumb-schema')
 
 @section('content')
