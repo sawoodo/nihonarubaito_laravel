@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('jobs:auto-trash')->daily()->at('02:00');
+
+Schedule::command('sitemap:generate')->daily()->at('02:30');

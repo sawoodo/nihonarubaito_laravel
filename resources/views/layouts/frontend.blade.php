@@ -4,7 +4,7 @@
 <head>
       <link rel="alternate" href="https://nihonarubaito.com/" hreflang="en-jp" />
 
-	 <link rel="canonical" href="{{ $canonical ?? 'https://nihonarubaito.com' }}"/>
+	 <link rel="canonical" href="{{ $canonical ?? url()->current() }}"/>
     <!-- Preload the logo image with as="image" -->
     <link rel="preload" href="{{ url('frontend/images/logo.webp') }}" as="image" type="image/webp" fetchpriority="high">
 

@@ -39,7 +39,7 @@ class PageController extends Controller
             Mail::html($msg, function ($message) use ($request) {
                 $message->to('support@nihonarubaito.com')
                         ->subject('Contact Form: ' . $request->input('subject'))
-                        ->from($request->input('sender_email'), $request->input('sender_name'));
+                        ->replyTo($request->input('sender_email'), $request->input('sender_name'));
             });
         } catch (\Exception $e) {
             // Log but don't crash - same as CI3 behavior

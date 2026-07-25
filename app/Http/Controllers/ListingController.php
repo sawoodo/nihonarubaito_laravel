@@ -160,14 +160,8 @@ class ListingController extends Controller
             $title .= ' in ' . $jobs->first()->prefecture_name;
         }
 
-        // Canonical → corresponding prefecture page (not search URL)
-        $canonical = null;
-        if ($prefectureId > 0) {
-            $prefName = $prefectures[$prefectureId] ?? '';
-            if ($prefName) {
-                $canonical = url('part-time-jobs-in-' . strtolower($prefName));
-            }
-        }
+        // Self-referencing canonical (noindex prevents indexing, no conflict with prefecture pages)
+        $canonical = url()->current();
 
         return view('listings.index', [
             'jobs'            => $jobs,
@@ -638,6 +632,7 @@ class ListingController extends Controller
                 'min_wage' => number_format($minWage),
                 'max_wage' => number_format($maxWage),
                 'total_subscribers' => number_format($subscribers),
+                'applications' => number_format($secondaryConversions),
                 'total_conversions' => number_format($conversions + $secondaryConversions),
                 'restaurant_conversions' => number_format($restaurantConversions + $restaurantSecondary),
             ];

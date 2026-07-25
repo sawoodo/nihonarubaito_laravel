@@ -150,7 +150,23 @@ class JobController extends Controller
 
             $validated = $request->validate($rules);
 
-            // Duplicate check (skip if user confirmed via hidden field)
+            // Tier 0: apply_link check (highest priority — exact URL match)
+            if (!$request->input('skip_duplicate_check')) {
+                $applyLink = trim((string) $request->input('apply_link', ''));
+                $existingByUrl = JobDeduplicator::findByApplyLink($applyLink);
+                if ($existingByUrl) {
+                    return back()->withInput()->with('duplicate_warning', [
+                        'level'   => 'high',
+                        'label'   => 'EXACT URL MATCH',
+                        'job_no'  => $existingByUrl->job_no,
+                        'title'   => $existingByUrl->title,
+                        'date'    => $existingByUrl->date,
+                        'status'  => $existingByUrl->job_status_id == 3 ? 'Published' : 'Pending',
+                    ]);
+                }
+            }
+
+                        // Duplicate check (skip if user confirmed via hidden field)
             if (!$request->input('skip_duplicate_check')) {
                 $dup = JobDeduplicator::findDuplicate(
                     $validated['company_name'],
@@ -424,6 +440,22 @@ class JobController extends Controller
         }
         if (!$job->area_id || $job->area_id == 0) {
             return redirect('/admin/jobs')->with('error', 'Please set the area before publishing.');
+        }
+
+        // Re-check apply_link duplicates at publish time
+        if (!empty($job->apply_link) && $job->apply_link !== '123') {
+            $existingPublished = DB::table('jobs')
+                ->where('apply_link', $job->apply_link)
+                ->where('job_status_id', Job::STATUS_PUBLISHED)
+                ->where('id', '!=', $job->id)
+                ->first();
+
+            if ($existingPublished) {
+                return redirect('/admin/jobs')->with('error',
+                    'Cannot publish: A job with the same apply URL is already published as Job #' .
+                    $existingPublished->job_no . '. Trash the existing one first or trash this draft.'
+                );
+            }
         }
 
         $this->createFbPost($job);

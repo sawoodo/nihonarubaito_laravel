@@ -34,7 +34,7 @@
 
             <span>
                 <i class="fa fa-subway icon" aria-hidden="true"></i>
-                <small><b>{{ $job->station }}</b></small>
+                <small><b>{!! $job->station !!}</b></small>
             </span>
 
             <br>

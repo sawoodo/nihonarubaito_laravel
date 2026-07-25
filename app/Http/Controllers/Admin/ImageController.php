@@ -72,7 +72,7 @@ class ImageController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'file' => 'required|image|mimes:gif,jpg,jpeg,png|max:2048',
+            'file' => 'required|image|mimes:gif,jpg,jpeg,png,webp|max:2048',
         ]);
 
         $file = $request->file('file');
@@ -88,8 +88,8 @@ class ImageController extends Controller
 
         $file->move($uploadPath, $fileName);
 
-        // Resize to max 1024x768
-        $this->resizeImage($uploadPath . '/' . $fileName, 1024, 768);
+        // Resize to max 500x333
+        $this->resizeImage($uploadPath . '/' . $fileName, 500, 333);
 
         // Create thumbnail
         $thumbPath = public_path('frontend/images/jobs/thumbnails');
@@ -156,6 +156,7 @@ class ImageController extends Controller
             'image/jpeg' => imagecreatefromjpeg($path),
             'image/png'  => imagecreatefrompng($path),
             'image/gif'  => imagecreatefromgif($path),
+            'image/webp' => imagecreatefromwebp($path),
             default      => null,
         };
 
@@ -175,6 +176,7 @@ class ImageController extends Controller
         match ($info['mime']) {
             'image/jpeg' => imagejpeg($dst, $path, 90),
             'image/png'  => imagepng($dst, $path),
+            'image/webp' => imagewebp($dst, $path, 85),
             'image/gif'  => imagegif($dst, $path),
         };
 

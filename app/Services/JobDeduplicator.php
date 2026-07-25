@@ -93,6 +93,27 @@ class JobDeduplicator
     }
 
     /**
+     * Find active job with the exact same apply_link (Tier 0 — highest priority).
+     * Same Baitoru/Shigotoin URL = same job, no fuzzy matching needed.
+     *
+     * @return object|null  The existing job row, or null if no match.
+     */
+    public static function findByApplyLink(string $applyLink): ?object
+    {
+        $applyLink = trim($applyLink);
+        if (empty($applyLink) || $applyLink === '123') {
+            return null;
+        }
+
+        return DB::table('jobs')
+            ->where('apply_link', $applyLink)
+            ->whereIn('job_status_id', [2, 3]) // Pending, Published
+            ->select('id', 'job_no', 'title', 'company_name', 'prefecture_id', 'area_id', 'date', 'delete_at', 'job_status_id')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+        /**
      * Refresh an existing job's expiry date instead of creating a duplicate.
      */
     public static function refreshExisting(int $existingJobId, ?string $newDeleteAt = null): void
