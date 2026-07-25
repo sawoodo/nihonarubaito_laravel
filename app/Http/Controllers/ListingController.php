@@ -394,6 +394,31 @@ class ListingController extends Controller
         // URL pattern for popular area links
         $urlPattern = "{$uri['query']}-{$uri['job']}-in-";
 
+        // Noindex only pages that are genuinely empty.
+        // Three guards, evaluated left-to-right so pages WITH jobs skip the rest entirely.
+        //
+        //   1. $totalRows === 0        — nothing to show
+        //   2. !$hasEditorialContent   — no written content either (protects future area content)
+        //   3. !$isPrefecturePage      — hard floor: the 47 prefecture pages are never deindexed
+        //
+        // Guard 3 exists because a transient query failure on a top-ranking page
+        // (e.g. Tokyo) would otherwise emit noindex and get cached for 30 minutes.
+        $hasEditorialContent = !empty($blogPost)
+            && strlen(strip_tags($blogPost->post ?? '')) > 500;
+
+        $isPrefecturePage = $prefecture !== null
+            && $areaId === 0
+            && !$isStationPage
+            && $query === 'part time';
+
+        $noindex = ($totalRows === 0) && !$hasEditorialContent && !$isPrefecturePage;
+
+        // Don't cache a noindex response — otherwise the tag survives up to 30 minutes
+        // after jobs return. These pages have no traffic, so the cache loss costs nothing.
+        if ($noindex) {
+            $request->attributes->remove('cache_max_age');
+        }
+
         return view('listings.by-slug', [
             'jobs'             => $jobs,
             'popular_areas'    => $prefecture ? $popularAreas : null,
@@ -423,6 +448,7 @@ class ListingController extends Controller
             'neighbors'        => $neighbors,
             'faq_items'        => $faqItems,
             'prefecture_name'  => $prefecture ? $prefecture->english : null,
+            'noindex'          => $noindex,
         ]);
     }
 

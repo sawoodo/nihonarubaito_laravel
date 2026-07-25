@@ -471,7 +471,7 @@ class JobController extends Controller
             return;
         }
 
-        $applyLink = "nihonarubaito.com/jobs/{$job->job_no}/detail?utm_source=fb";
+        $applyLink = url($job->detail_path) . '?utm_source=fb';
         $desc = strip_tags(str_replace(['<br/>', '<br>', '<br />'], ' ', $job->description ?? ''));
 
         $content = $job->title . "\n\n"

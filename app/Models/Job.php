@@ -355,6 +355,20 @@ class Job extends Model
     }
 
     /**
+     * Canonical detail page path for this job (no scheme/host, with slug).
+     * Used for Facebook posts, internal links, and canonical URL generation.
+     *
+     * @return string  e.g., "jobs/156344/detail/english-hotel-room-cleaning"
+     */
+    public function getDetailPathAttribute(): string
+    {
+        $lang = $this->language;
+        $langName = $lang ? strtolower($lang->english ?? 'english') : 'english';
+        $slug = \Illuminate\Support\Str::slug(strtolower("{$langName}-{$this->title}"));
+        return "jobs/{$this->job_no}/detail/{$slug}";
+    }
+
+    /**
      * Parse wage string into Schema.org baseSalary QuantitativeValue format.
      * Returns array for use inside MonetaryAmount->value, or null if unparseable.
      *
