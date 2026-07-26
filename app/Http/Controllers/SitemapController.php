@@ -19,6 +19,8 @@ class SitemapController extends Controller
         'sannomiya', 'himeji',
         'funabashi', 'matsudo', 'kashiwa',
         'maebashi', 'gifu', 'hamamatsu', 'shizuoka',
+        // Clean-ratio additions (strict ≈ loose, no collisions)
+        'hatchobori', 'kanayama', 'yodoyabashi', 'hommachi', 'urawa', 'akihabara', 'kyobashi', 'oyama',
     ];
 
     public function xml()
@@ -97,6 +99,36 @@ class SitemapController extends Controller
         // Daily payment jobs by area (high-converting modifier + sustained inventory)
         foreach (config('featured.daily_payment_areas', []) as $areaSlug) {
             $xml .= $this->urlEntry("{$baseUrl}/daily-payment-jobs-in-{$areaSlug}", null, '0.8', 'daily');
+        }
+
+        // Prefecture-level modifier pages, driven by live inventory.
+        // Only prefectures with jobs are listed — an empty page would emit
+        // noindex and GSC would flag it as "submitted URL marked noindex".
+        $modifiers = [
+            'hand-cash'     => 'hand cash',
+            'daily-payment' => 'daily payment',
+            'bed-making'    => 'bed making',
+        ];
+
+        foreach ($modifiers as $urlSlug => $searchTerm) {
+            $prefs = DB::table('jobs as j')
+                ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+                ->where('j.job_status_id', 3)
+                ->where(function ($q) use ($searchTerm) {
+                    $q->where('j.title', 'like', "%{$searchTerm}%")
+                      ->orWhere('j.description', 'like', "%{$searchTerm}%");
+                })
+                ->select('p.english', DB::raw('count(*) as n'))
+                ->groupBy('p.id', 'p.english')
+                ->having('n', '>=', 2)      // buffer against a single expiry emptying the page
+                ->pluck('p.english');
+
+            foreach ($prefs as $prefName) {
+                $xml .= $this->urlEntry(
+                    "{$baseUrl}/{$urlSlug}-jobs-in-" . Str::slug($prefName),
+                    null, '0.8', 'daily'
+                );
+            }
         }
 
         // Prefecture + area pages (global dedup to handle cross-prefecture name collisions)
