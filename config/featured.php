@@ -19,7 +19,8 @@ return [
     ],
 
     // Areas with enough daily-payment inventory (8+ published) to sustain
-    // a dedicated page through normal churn. Reviewed quarterly.
+    // a dedicated page through normal churn. Inventory churns faster than
+    // hand-cash (dispatch agencies). Review quarterly.
     'daily_payment_areas' => [
         'minato-ku',                // 27 jobs
         'higashi-osaka-city',       // 27 jobs
@@ -32,7 +33,7 @@ return [
         'ota-ku',                   // 14 jobs
         'matsudo',                  // 14 jobs
         'utsunomiya',               // 14 jobs
-        'nakano',                   // 13 jobs
+        // 'nakano' removed: slug collision (Tokyo ID 14 vs Nagano ID 941)
         'setagaya',                 // 13 jobs
         'ichikawa',                 // 13 jobs
         'ibaraki',                  // 13 jobs
