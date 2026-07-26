@@ -8,6 +8,7 @@ use App\Services\JobDeduplicator;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AnalyticsController extends Controller
 {
@@ -394,7 +395,7 @@ class AnalyticsController extends Controller
         $areasByKey = [];    // exact key: "shinjuku-ward" → area
         $areasByPartial = []; // partial: "shinjuku" → area (first word match)
         foreach ($areas as $a) {
-            $key = strtolower(str_replace(' ', '-', $a->english));
+            $key = Str::slug($a->english); // Handles trailing whitespace + matches URL slugs exactly
             if (!isset($areasByKey[$key])) {
                 $areasByKey[$key] = $a;
             }

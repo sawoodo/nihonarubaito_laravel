@@ -9,6 +9,9 @@
     RewriteCond %{HTTP_HOST} ^www\.nihonarubaito\.com [NC]
     RewriteRule ^(.*)$ https://nihonarubaito.com/$1 [R=301,L]
 
+    # Redirect legacy /laravel/public/index.php/* URLs (1,041 distinct, ~1,400 views/month)
+    RewriteRule ^laravel/public/index\.php/(.+)$ https://nihonarubaito.com/$1 [R=301,L]
+
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
