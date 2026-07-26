@@ -419,6 +419,27 @@ class ListingController extends Controller
             $request->attributes->remove('cache_max_age');
         }
 
+        // Related filter links (hand-cash, daily-payment) for areas with sustained inventory
+        $relatedFilters = [];
+        if ($areaId > 0 && $area) {
+            $areaSlug = Str::slug($area->english);
+            $areaName = $area->english;
+
+            if (in_array($areaSlug, config('featured.hand_cash_areas', []), true)) {
+                $relatedFilters[] = [
+                    'url' => url("hand-cash-jobs-in-{$areaSlug}"),
+                    'label' => "Hand Cash Jobs in {$areaName}",
+                ];
+            }
+
+            if (in_array($areaSlug, config('featured.daily_payment_areas', []), true)) {
+                $relatedFilters[] = [
+                    'url' => url("daily-payment-jobs-in-{$areaSlug}"),
+                    'label' => "Daily Payment Jobs in {$areaName}",
+                ];
+            }
+        }
+
         return view('listings.by-slug', [
             'jobs'             => $jobs,
             'popular_areas'    => $prefecture ? $popularAreas : null,
@@ -449,6 +470,7 @@ class ListingController extends Controller
             'faq_items'        => $faqItems,
             'prefecture_name'  => $prefecture ? $prefecture->english : null,
             'noindex'          => $noindex,
+            'relatedFilters'   => $relatedFilters,
         ]);
     }
 

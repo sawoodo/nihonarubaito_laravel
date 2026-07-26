@@ -89,6 +89,16 @@ class SitemapController extends Controller
             $xml .= $this->urlEntry("{$baseUrl}/{$catSlug}", null, '0.9', 'daily');
         }
 
+        // Hand-cash jobs by area (high-converting modifier + sustained inventory)
+        foreach (config('featured.hand_cash_areas', []) as $areaSlug) {
+            $xml .= $this->urlEntry("{$baseUrl}/hand-cash-jobs-in-{$areaSlug}", null, '0.8', 'daily');
+        }
+
+        // Daily payment jobs by area (high-converting modifier + sustained inventory)
+        foreach (config('featured.daily_payment_areas', []) as $areaSlug) {
+            $xml .= $this->urlEntry("{$baseUrl}/daily-payment-jobs-in-{$areaSlug}", null, '0.8', 'daily');
+        }
+
         // Prefecture + area pages (global dedup to handle cross-prefecture name collisions)
         $emittedSlugs = [];
         foreach ($areas as $prefKey => $locations) {

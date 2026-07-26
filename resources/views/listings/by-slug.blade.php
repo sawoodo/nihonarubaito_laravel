@@ -33,6 +33,16 @@
 
             @include('listings.partials.search-form')
 
+            @if (!empty($relatedFilters))
+                <div class="tw-my-4 tw-text-center">
+                    @foreach ($relatedFilters as $filter)
+                        <a href="{{ $filter['url'] }}" class="btn btn-default btn-sm tw-mr-2 tw-mb-2">
+                            {{ $filter['label'] }}
+                        </a>
+                    @endforeach
+                </div>
+            @endif
+
             @if ($popular_areas)
                 <div class="list-group tw-mt-8">
                     <div class=" list-group-item">
