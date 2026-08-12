@@ -9,14 +9,20 @@ class Job extends Model
     protected $table = 'jobs';
 
     const CREATED_AT = 'date';
+
     const UPDATED_AT = 'updated_at';
 
     // Status constants
     const STATUS_DRAFT = 1;
+
     const STATUS_PENDING = 2;
+
     const STATUS_PUBLISHED = 3;
+
     const STATUS_EXPIRED = 4;
+
     const STATUS_TRASHED = 5;
+
     const STATUS_QUOTA_FULL = 6;
 
     protected $fillable = [
@@ -133,14 +139,14 @@ class Job extends Model
     public function scopeForSitemap($query, $langId = 1)
     {
         return $query->where('job_status_id', self::STATUS_PUBLISHED)
-                     ->where('lang_id', $langId)
-                     ->orderBy('updated_at', 'desc');
+            ->where('lang_id', $langId)
+            ->orderBy('updated_at', 'desc');
     }
 
     public function scopeForFrontend($query, $langId = 1)
     {
         return $query->where('job_status_id', self::STATUS_PUBLISHED)
-                     ->where('lang_id', $langId);
+            ->where('lang_id', $langId);
     }
 
     public function scopeFeatured($query)
@@ -151,7 +157,7 @@ class Job extends Model
     public function scopeWithLocalizedNames($query, string $langName)
     {
         $allowed = ['english', 'japanese', 'vietnamese', 'chinese', 'korean'];
-        if (!in_array($langName, $allowed, true)) {
+        if (! in_array($langName, $allowed, true)) {
             $langName = 'english';
         }
 
@@ -179,18 +185,18 @@ class Job extends Model
     public function scopeSearch($query, int $langId, string $langName, string $searchQuery = '', int $prefectureId = 0, int $areaId = 0, array $categories = [], array $exceptIds = [])
     {
         $query->withLocalizedNames($langName)
-              ->where('jobs.job_status_id', self::STATUS_PUBLISHED)
-              ->where('jobs.lang_id', $langId);
+            ->where('jobs.job_status_id', self::STATUS_PUBLISHED)
+            ->where('jobs.lang_id', $langId);
 
         if ($searchQuery !== '') {
             $query->where(function ($q) use ($searchQuery) {
                 $q->where('jobs.job_no', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.title', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.company_name', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.description', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.station', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.address', 'LIKE', "%{$searchQuery}%")
-                  ->orWhere('jobs.requirement', 'LIKE', "%{$searchQuery}%");
+                    ->orWhere('jobs.title', 'LIKE', "%{$searchQuery}%")
+                    ->orWhere('jobs.company_name', 'LIKE', "%{$searchQuery}%")
+                    ->orWhere('jobs.description', 'LIKE', "%{$searchQuery}%")
+                    ->orWhere('jobs.station', 'LIKE', "%{$searchQuery}%")
+                    ->orWhere('jobs.address', 'LIKE', "%{$searchQuery}%")
+                    ->orWhere('jobs.requirement', 'LIKE', "%{$searchQuery}%");
             });
         }
 
@@ -200,10 +206,10 @@ class Job extends Model
         if ($areaId > 0) {
             $query->where('jobs.area_id', $areaId);
         }
-        if (!empty($categories)) {
+        if (! empty($categories)) {
             $query->whereIn('jobs.job_category_id', $categories);
         }
-        if (!empty($exceptIds)) {
+        if (! empty($exceptIds)) {
             $query->whereNotIn('jobs.id', $exceptIds);
         }
 
@@ -213,10 +219,10 @@ class Job extends Model
     public function scopeAllForFrontend($query, string $langName, int $langId)
     {
         return $query->withLocalizedNames($langName)
-                     ->where('jobs.job_status_id', self::STATUS_PUBLISHED)
-                     ->where('jobs.lang_id', $langId)
-                     ->orderBy('jobs.featured', 'desc')
-                     ->orderBy('jobs.updated_at', 'desc');
+            ->where('jobs.job_status_id', self::STATUS_PUBLISHED)
+            ->where('jobs.lang_id', $langId)
+            ->orderBy('jobs.featured', 'desc')
+            ->orderBy('jobs.updated_at', 'desc');
     }
 
     public function scopeForBackend($query, int $userId, int $roleId, int $statusId = 0, int $langId = 0, int $backendUserId = 0, bool $featured = false)
@@ -230,15 +236,15 @@ class Job extends Model
             \DB::raw("CONCAT(created.first_name, ' ', created.last_name) AS created_by_name"),
             \DB::raw("CONCAT(updated.first_name, ' ', updated.last_name) AS updated_by_name"),
         ])
-        ->from('jobs as j')
-        ->leftJoin('categories as jc', 'j.job_category_id', '=', 'jc.id')
-        ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
-        ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
-        ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
-        ->join('users as created', 'j.user_id', '=', 'created.id')
-        ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
-        ->where('j.job_status_id', '!=', self::STATUS_DRAFT)
-        ->orderBy('j.id', 'desc');
+            ->from('jobs as j')
+            ->leftJoin('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
+            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
+            ->join('users as created', 'j.user_id', '=', 'created.id')
+            ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
+            ->where('j.job_status_id', '!=', self::STATUS_DRAFT)
+            ->orderBy('j.id', 'desc');
 
         if ($roleId != 1) {
             $query->where('j.user_id', $userId);
@@ -270,14 +276,14 @@ class Job extends Model
             \DB::raw("CONCAT(created.first_name, ' ', created.last_name) AS created_by_name"),
             \DB::raw("CONCAT(updated.first_name, ' ', updated.last_name) AS updated_by_name"),
         ])
-        ->from('jobs as j')
-        ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
-        ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
-        ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
-        ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
-        ->join('users as created', 'j.user_id', '=', 'created.id')
-        ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
-        ->whereRaw("DATE(j.date) BETWEEN ? AND ?", [$from, $to]);
+            ->from('jobs as j')
+            ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
+            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
+            ->join('users as created', 'j.user_id', '=', 'created.id')
+            ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
+            ->whereRaw('DATE(j.date) BETWEEN ? AND ?', [$from, $to]);
 
         if ($roleId != 1) {
             $query->where('j.user_id', $userId);
@@ -288,14 +294,14 @@ class Job extends Model
 
         $query->where(function ($q) use ($search) {
             $q->where('j.job_no', 'LIKE', "%{$search}%")
-              ->orWhere('j.title', 'LIKE', "%{$search}%")
-              ->orWhere('j.company_name', 'LIKE', "%{$search}%")
-              ->orWhere('j.description', 'LIKE', "%{$search}%")
-              ->orWhere('jc.english', 'LIKE', "%{$search}%")
-              ->orWhere('p.english', 'LIKE', "%{$search}%")
-              ->orWhere('j.apply_link', 'LIKE', "%{$search}%")
-              ->orWhere('created.first_name', 'LIKE', "%{$search}%")
-              ->orWhere('created.last_name', 'LIKE', "%{$search}%");
+                ->orWhere('j.title', 'LIKE', "%{$search}%")
+                ->orWhere('j.company_name', 'LIKE', "%{$search}%")
+                ->orWhere('j.description', 'LIKE', "%{$search}%")
+                ->orWhere('jc.english', 'LIKE', "%{$search}%")
+                ->orWhere('p.english', 'LIKE', "%{$search}%")
+                ->orWhere('j.apply_link', 'LIKE', "%{$search}%")
+                ->orWhere('created.first_name', 'LIKE', "%{$search}%")
+                ->orWhere('created.last_name', 'LIKE', "%{$search}%");
         });
 
         return $query;
@@ -312,11 +318,11 @@ class Job extends Model
             'img.name as images_img_name',
             'img.ext as images_img_ext',
         ])
-        ->from('jobs as j')
-        ->join('languages as l', 'j.lang_id', '=', 'l.id')
-        ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
-        ->leftJoin('images as img', 'j.img_id', '=', 'img.id')
-        ->where('j.job_no', $jobNo);
+            ->from('jobs as j')
+            ->join('languages as l', 'j.lang_id', '=', 'l.id')
+            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            ->leftJoin('images as img', 'j.img_id', '=', 'img.id')
+            ->where('j.job_no', $jobNo);
     }
 
     public function scopeForView($query, string $jobNo)
@@ -333,15 +339,15 @@ class Job extends Model
             'img.name as images_img_name',
             'img.ext as images_img_ext',
         ])
-        ->from('jobs as j')
-        ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
-        ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
-        ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
-        ->leftJoin('areas as a', 'j.area_id', '=', 'a.id')
-        ->leftJoin('wage_types as wt', 'j.wage_type_id', '=', 'wt.id')
-        ->leftJoin('trans_exp_payments as tep', 'j.trans_exp_id', '=', 'tep.id')
-        ->leftJoin('images as img', 'j.img_id', '=', 'img.id')
-        ->where('j.job_no', $jobNo);
+            ->from('jobs as j')
+            ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
+            ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            ->leftJoin('areas as a', 'j.area_id', '=', 'a.id')
+            ->leftJoin('wage_types as wt', 'j.wage_type_id', '=', 'wt.id')
+            ->leftJoin('trans_exp_payments as tep', 'j.trans_exp_id', '=', 'tep.id')
+            ->leftJoin('images as img', 'j.img_id', '=', 'img.id')
+            ->where('j.job_no', $jobNo);
     }
 
     public function getSlugAttribute(): string
@@ -351,6 +357,7 @@ class Job extends Model
         $title = strtolower(trim($this->title ?? ''));
         $title = preg_replace('/[^a-z0-9\s-]/', '', $title);
         $title = preg_replace('/[\s-]+/', '-', $title);
+
         return "{$langName}-{$title}";
     }
 
@@ -358,13 +365,14 @@ class Job extends Model
      * Canonical detail page path for this job (no scheme/host, with slug).
      * Used for Facebook posts, internal links, and canonical URL generation.
      *
-     * @return string  e.g., "jobs/156344/detail/english-hotel-room-cleaning"
+     * @return string e.g., "jobs/156344/detail/english-hotel-room-cleaning"
      */
     public function getDetailPathAttribute(): string
     {
         $lang = $this->language;
         $langName = $lang ? strtolower($lang->english ?? 'english') : 'english';
         $slug = \Illuminate\Support\Str::slug(strtolower("{$langName}-{$this->title}"));
+
         return "jobs/{$this->job_no}/detail/{$slug}";
     }
 
@@ -372,7 +380,7 @@ class Job extends Model
      * Parse wage string into Schema.org baseSalary QuantitativeValue format.
      * Returns array for use inside MonetaryAmount->value, or null if unparseable.
      *
-     * @param string|null $wage Raw wage string from jobs.wage column
+     * @param  string|null  $wage  Raw wage string from jobs.wage column
      * @return array|null QuantitativeValue array, or null to omit baseSalary
      *
      * Examples:
@@ -408,7 +416,7 @@ class Job extends Model
         // Extract all numbers
         preg_match_all('/\d[\d,]*/', $wage, $matches);
         $numbers = array_map(function ($n) {
-            return (int)preg_replace('/[^0-9]/', '', $n);
+            return (int) preg_replace('/[^0-9]/', '', $n);
         }, $matches[0] ?? []);
 
         if (empty($numbers)) {
@@ -416,7 +424,7 @@ class Job extends Model
         }
 
         // Auto-detect monthly based on MAX amount (only when no explicit unit)
-        if (!$hasExplicitUnit && max($numbers) > 50000) {
+        if (! $hasExplicitUnit && max($numbers) > 50000) {
             $unitText = 'MONTH';
         }
 
@@ -463,8 +471,8 @@ class Job extends Model
 
         // Multi-number strings - check if range separator is BETWEEN first two numbers
         if (count($numbers) >= 2) {
-            $num1Str = (string)$numbers[0];
-            $num2Str = (string)$numbers[1];
+            $num1Str = (string) $numbers[0];
+            $num2Str = (string) $numbers[1];
             $num1Pattern = number_format($numbers[0]);
             $num2Pattern = number_format($numbers[1]);
 
@@ -494,6 +502,7 @@ class Job extends Model
                                 'unitText' => $unitText,
                             ];
                         }
+
                         // Invalid range (max < min) - omit
                         return null;
                     }
@@ -505,7 +514,7 @@ class Job extends Model
             // Prefer rate near 本採用, otherwise omit
             if (mb_strpos($wage, '本採用') !== false) {
                 if (preg_match('/本採用[^0-9]*?([\d,]+)/u', $wage, $m)) {
-                    $afterHireValue = (int)preg_replace('/[^0-9]/', '', $m[1]);
+                    $afterHireValue = (int) preg_replace('/[^0-9]/', '', $m[1]);
                     if ($afterHireValue > 0) {
                         // Check if this number is followed by trailing range separator
                         $afterHireFullMatch = $m[0];
