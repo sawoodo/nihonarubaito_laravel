@@ -9,6 +9,9 @@ class FrontendComposer
 {
     public function compose(View $view): void
     {
+        // EMERGENCY OVERRIDE: Force English until Japanese outage diagnosed
+        session(['user_lang' => 1, 'lang_name' => 'english']);
+
         $langId = session('user_lang', 1);
         $langName = session('lang_name', 'english');
 

@@ -7,7 +7,8 @@
                             @php $style = 'style="visibility: hidden;"' @endphp
                             <ul class="language-container list-inline" {!! isset($hide_lang_switcher) && $hide_lang_switcher ? $style : '' !!}> <!-- social-small -->
                                 @foreach ($lang_with_flags as $lang)
-                                    @if (!in_array($lang->id, [2, 5]))
+                                    {{-- EMERGENCY: Hide non-English to prevent cache poisoning. Restore after Step 6. --}}
+                                    @if (!in_array($lang->id, [2, 3, 4, 5]))
                                         <li class="text-center">
                                             <a href="{{ url("lang/{$lang->id}") }}">
                                                 <small>

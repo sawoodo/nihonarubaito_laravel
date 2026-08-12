@@ -34,6 +34,16 @@ class ApplyCacheHeaders
             return $response;
         }
 
+        // Never cache a non-English render. A Japanese or Vietnamese session hitting
+        // an expired cache entry would otherwise poison the shared CDN cache and serve
+        // that language to every visitor for 30 minutes.
+        // English is unaffected: user_lang defaults to 1, condition is false,
+        // identical code path. Returning early preserves Set-Cookie, which makes
+        // nginx refuse to cache the response.
+        if ((int) session('user_lang', 1) !== 1) {
+            return $response;
+        }
+
         // Strip all Set-Cookie headers so SiteGround's proxy will cache
         $response->headers->remove('Set-Cookie');
 

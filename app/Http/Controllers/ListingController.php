@@ -68,7 +68,14 @@ class ListingController extends Controller
         // Categories for search form
         $jobCategories = Category::all();
 
-        $title = 'Part-Time Jobs in Japan for Foreigners | Nihon Arubaito';
+        // SEO fix: page suffix in title for page 2+
+        $baseTitle = 'Part-Time Jobs in Japan for Foreigners';
+        $title = $page > 1
+            ? "{$baseTitle} - Page {$page} | Nihon Arubaito"
+            : "{$baseTitle} | Nihon Arubaito";
+
+        // SEO fix: self-referencing canonical
+        $canonical = $page > 1 ? url("jobs/page/{$page}") : url('/');
 
         return view('listings.index', [
             'jobs'            => $jobs,
@@ -88,8 +95,8 @@ class ListingController extends Controller
             'og_type'         => 'website',
             'page_description' => 'Find part-time & hand cash jobs near you in Japan — restaurant, warehouse, hotel cleaning across all 47 prefectures. For foreigners, no kanji required.',
             'og_image'        => 'https://nihonarubaito.com/frontend/images/main-og-title.png',
-            'og_url'          => 'https://nihonarubaito.com/',
-            'canonical'       => 'https://nihonarubaito.com/',
+            'og_url'          => $canonical,
+            'canonical'       => $canonical,
             'keywords'        => 'Find Part time jobs in japan, Find Work in Japan, jobs Opportunities japan, Part time job portal in japan, Nihon Arubaito, Baito, Jobs for foreigners in japan',
             'active_nav'      => 'jobs',
         ]);

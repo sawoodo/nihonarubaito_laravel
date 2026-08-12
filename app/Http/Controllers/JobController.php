@@ -86,10 +86,36 @@ class JobController extends Controller
         }
         $breadcrumbData = $this->createBreadcrumb($job, $langName);
 
+        // Transform title: location-first for distinctiveness in search results
+        $t = $job->title;
+
+        // Protect the wage segment (preserve 円 and 〜 — familiar to residents)
+        $wage = '';
+        if (preg_match('/[\d,]+円(?:[〜～][\d,]+円)?/u', $t, $w)) {
+            $wage = $w[0];
+            $t = str_replace($wage, '@@W@@', $t);
+        }
+
+        // Strip kanji station names (redundant — romaji is present)
+        $t = preg_replace('/[\x{3000}-\x{9FFF}\x{FF00}-\x{FFEF}]+/u', '', $t);
+
+        // Restore the wage with native formatting intact
+        $t = str_replace('@@W@@', $wage, $t);
+
+        $t = str_replace(' Part Time Job', '', $t);
+        $t = preg_replace('/\s+/', ' ', trim($t));
+
+        // Split on the LAST " at " — role before, location after
+        if (preg_match('/^(.+) at (.+)$/u', $t, $m)) {
+            $pageTitle = trim($m[2]) . ' — ' . trim($m[1]) . ' | Nihon Arubaito';
+        } else {
+            $pageTitle = $t . ' | Nihon Arubaito';
+        }
+
         return view('jobs.detail', [
             'job' => $job,
             'related_jobs' => $relatedJobs,
-            'page_title' => Str::limit($job->title, 42) . ' | Nihon Arubaito',
+            'page_title' => $pageTitle,
             'page_description' => $job->description,
             'og_title' => $job->title,
             'og_description' => $job->description,
