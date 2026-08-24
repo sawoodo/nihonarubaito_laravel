@@ -1,195 +1,162 @@
-<laravel-boost-guidelines>
-=== foundation rules ===
-
-# Laravel Boost Guidelines
-
-The Laravel Boost guidelines are specifically curated by Laravel maintainers for this application. These guidelines should be followed closely to ensure the best experience when building Laravel applications.
-
-## Foundational Context
-
-This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
-
-- php - 8.2
-- laravel/framework (LARAVEL) - v11
-- laravel/prompts (PROMPTS) - v0
-- laravel/boost (BOOST) - v2
-- laravel/mcp (MCP) - v0
-- laravel/pail (PAIL) - v1
-- laravel/pint (PINT) - v1
-- laravel/sail (SAIL) - v1
-- phpunit/phpunit (PHPUNIT) - v11
-
-## Skills Activation
-
-This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
-
-## Conventions
-
-- You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
-- Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
-- Check for existing components to reuse before writing a new one.
-
-## Verification Scripts
-
-- Do not create verification scripts or tinker when tests cover that functionality and prove they work. Unit and feature tests are more important.
-
-## Application Structure & Architecture
-
-- Stick to existing directory structure; don't create new base folders without approval.
-- Do not change the application's dependencies without approval.
-
-## Frontend Bundling
-
-- If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `npm run build`, `npm run dev`, or `composer run dev`. Ask them.
-
-## Documentation Files
-
-- You must only create documentation files if explicitly requested by the user.
-
-## Replies
-
-- Be concise in your explanations - focus on what's important rather than explaining obvious details.
-
-=== boost rules ===
-
-# Laravel Boost
-
-## Tools
-
-- Laravel Boost is an MCP server with tools designed specifically for this application. Prefer Boost tools over manual alternatives like shell commands or file reads.
-- Use `database-query` to run read-only queries against the database instead of writing raw SQL in tinker.
-- Use `database-schema` to inspect table structure before writing migrations or models.
-- Use `get-absolute-url` to resolve the correct scheme, domain, and port for project URLs. Always use this before sharing a URL with the user.
-- Use `browser-logs` to read browser logs, errors, and exceptions. Only recent logs are useful, ignore old entries.
-
-## Searching Documentation (IMPORTANT)
-
-- Always use `search-docs` before making code changes. Do not skip this step. It returns version-specific docs based on installed packages automatically.
-- Pass a `packages` array to scope results when you know which packages are relevant.
-- Use multiple broad, topic-based queries: `['rate limiting', 'routing rate limiting', 'routing']`. Expect the most relevant results first.
-- Do not add package names to queries because package info is already shared. Use `test resource table`, not `filament 4 test resource table`.
-
-### Search Syntax
-
-1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
-2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
-3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
-4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
-
-## Artisan
-
-- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
-- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
-- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
-
-## Tinker
-
-- Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
-
-=== php rules ===
-
-# PHP
-
-- Always use curly braces for control structures, even for single-line bodies.
-- Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
-- Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
-- Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
-- Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
-- Use array shape type definitions in PHPDoc blocks.
-
-=== deployments rules ===
-
-# Deployment
-
-- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
-
-=== laravel/core rules ===
-
-# Do Things the Laravel Way
-
-- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `php artisan list` and check their parameters with `php artisan [command] --help`.
-- If you're creating a generic PHP class, use `php artisan make:class`.
-- Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
-
-### Model Creation
-
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.
-
-## APIs & Eloquent Resources
-
-- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.
-
-## URL Generation
-
-- When generating links to other pages, prefer named routes and the `route()` function.
-
-## Testing
-
-- When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
-- Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
-- When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
-
-## Vite Error
-
-- If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
-
-=== laravel/v11 rules ===
-
-# Laravel 11
-
-- CRITICAL: ALWAYS use `search-docs` tool for version-specific Laravel documentation and updated code examples.
-- Laravel 11 brought a new streamlined file structure which this project now uses.
-
-## Laravel 11 Structure
-
-- In Laravel 11, middleware are no longer registered in `app/Http/Kernel.php`.
-- Middleware are configured declaratively in `bootstrap/app.php` using `Application::configure()->withMiddleware()`.
-- `bootstrap/app.php` is the file to register middleware, exceptions, and routing files.
-- `bootstrap/providers.php` contains application specific service providers.
-- No app\Console\Kernel.php - use `bootstrap/app.php` or `routes/console.php` for console configuration.
-- Commands auto-register - files in `app/Console/Commands/` are automatically available and do not require manual registration.
-
-## Database
-
-- When modifying a column, the migration must include all of the attributes that were previously defined on the column. Otherwise, they will be dropped and lost.
-- Laravel 11 allows limiting eagerly loaded records natively, without external packages: `$query->latest()->limit(10);`.
-
-### Models
-
-- Casts can and likely should be set in a `casts()` method on a model rather than the `$casts` property. Follow existing conventions from other models.
-
-## New Artisan Commands
-
-- List Artisan commands using Boost's MCP tool, if available. New commands available in Laravel 11:
-    - `php artisan make:enum`
-    - `php artisan make:class`
-    - `php artisan make:interface`
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
-
-=== phpunit/core rules ===
-
-# PHPUnit
-
-- This application uses PHPUnit for testing. All tests must be written as PHPUnit classes. Use `php artisan make:test --phpunit {name}` to create a new test.
-- If you see a test using "Pest", convert it to PHPUnit.
-- Every time a test has been updated, run that singular test.
-- When the tests relating to your feature are passing, ask the user if they would like to also run the entire test suite to make sure everything is still passing.
-- Tests should cover all happy paths, failure paths, and edge cases.
-- You must not remove any tests or test files from the tests directory without approval. These are not temporary or helper files; these are core to the application.
-
-## Running Tests
-
-- Run the minimal number of tests, using an appropriate filter, before finalizing.
-- To run all tests: `php artisan test --compact`.
-- To run all tests in a file: `php artisan test --compact tests/Feature/ExampleTest.php`.
-- To filter on a particular test name: `php artisan test --compact --filter=testName` (recommended after making a change to a related file).
-
-</laravel-boost-guidelines>
+# Nihon Arubaito - Development Context
+
+> Connection details (SSH host/port/user, DB name) are kept in a separate private
+> credentials note, NOT in this file. Read DB_DATABASE live from .env; never hardcode.
+
+## Environment
+- Domain: https://nihonarubaito.com  |  Admin: /admin/login
+- Hosting: SiteGround (Japan server). `php artisan cache:clear` does NOT purge
+  SiteGround Dynamic Cache/CDN — purge that separately in Site Tools after deploys.
+- Stack: Laravel + MySQL + Bootstrap + jQuery + Chart.js
+
+## What Nihon Arubaito Is
+A job board that provides Japanese job listings in English for foreign residents in
+Japan who speak basic Japanese but cannot read/write kanji. Audience: language-school
+and university students, dependent-visa holders from Vietnam, Nepal, Philippines, China,
+Indonesia, Myanmar, South Asia. Revenue: Google AdSense + Amazon Associates +
+ValueCommerce affiliate (job apply clicks).
+
+## Job Lifecycle System
+- Status 3 = Published (active, indexed) | Status 5 = Trashed (expired)
+- Tier 1 (0-90d expired): noindex, keep page live with related jobs
+- Tier 2 (90-180d): 301 redirect to parent location page
+- Tier 3 (180+d): 410 Gone
+- delete_at controls auto-expiration
+
+## Database Key Tables
+- jobs: job_no, title, description, wage, prefecture_id, area_id, job_category_id,
+  job_status_id, apply_link, delete_at, user_id
+- prefectures: id, english, japanese | areas: id, prefecture_id, english, japanese
+- blog_posts: id, slug, lang_id, title, post (HTML for prefecture pages)
+- job_categories: 1=Packing/Sorting, 2=Restaurant, 3=Convenience Store,
+  4=Bed Making/Cleaning, 5=Delivery
+- users: role_id=1 is admin
+- IMPORTANT: Listing/detail rows come via Job::search() / withLocalizedNames() with
+  aliased join columns (prefecture_name, area_name) — these behave like stdClass, NOT
+  full Eloquent models. Use static helpers (e.g. Job::parseBaseSalaryLd()) on them,
+  not magic accessors.
+
+## Admin Dashboard Pages Built
+1. /admin/analytics — overview (cards, new-vs-expired chart, category breakdown, top jobs, prefecture breakdown, date range)
+2. /admin/analytics/demand-supply — GA4 CSV upload; finds pages with traffic but zero jobs (192 gap pages)
+3. /admin/analytics/employees — employee performance (jobs/day, streaks, heatmaps)
+4. /admin/analytics/expiring-jobs — expiring today/tomorrow/7d, inline date edit, +7/+30/+60 extend, bulk actions
+5. /admin/analytics/duplicates — duplicate detection (HIGH/MED/LOW), side-by-side, keep & trash
+
+## SEO Fixes Deployed
+- www → non-www 301; trailing-slash → non-trailing 301
+- Japanese URL slugs fixed (69 pages); job title truncation to 42 chars (694 pages)
+- About page H1 fix
+- Area slug canonicalization: /part-time-jobs-in-shinjuku → 301 → -shinjuku-ward (1,183 areas)
+- BreadcrumbList schema on all pages
+- rel="nofollow sponsored noopener" on apply/affiliate links
+- Duplicate content prevention at job creation (3 confidence levels)
+- JobPosting baseSalary parser (Jul 2026): string→numeric, ranges via minValue/maxValue,
+  unit detection (HOUR/DAY/MONTH), safe-omit on unparseable. Shared static helper
+  Job::parseBaseSalaryLd() used by ListingController::buildStructuredData() AND
+  JobController::createSchema(). Validated on all 991 distinct wages: 945 parse (95.4%),
+  46 omit (4.6%), 0 false positives. Fixed prior bug where detail page emitted
+  concatenated garbage (e.g. "1600円～2000円" → 16002000) on ~78% of jobs.
+  DO NOT convert listing inline JobPosting/ItemList to url-only ListItems — that
+  pattern earns the Job listing rich result; fix only fields inside it.
+  VALIDATED by Google Rich Results Test (Jul 7 2026): 31 valid items, 30 Job Postings,
+  0 errors (only optional postalCode warning). baseSalary renders numeric. Task closed.
+
+## Performance Fixes
+- Removed 70KB areas JSON from every page (FrontendComposer)
+- Staggered scripts: AdSense immediately, GA4 +1s, FB Pixel +2s; AdSense push via setTimeout 100ms
+- CLS: min-height wrappers on ad containers | INP: 819ms → target 200-250ms
+- Crawl latency: ~1,173ms Googlebot TTFB is cold-cache origin fetch to Singapore.
+  CDN DOES cache real GET requests (X-Proxy-Cache: HIT within TTL); the DT:1 seen earlier
+  was on HEAD (curl -I), which CDNs don't cache. Reframed as "origin cold-fetch latency"
+  — lower priority than tag migration.
+- CLS NOTE (Jul 2026): Homepage Lighthouse CLS ~1.061 (field 0.15, failing). Root cause:
+  main stylesheet loads fully async (media=print/onload) in shared layout, reflowing every
+  page. Above-fold images already have explicit dimensions. Fix deferred — CSS-loading
+  change and ad-placement change both have uncertain outcomes on a stable/revenue site;
+  revisit as a dedicated, measured session (test LCP before/after). Do NOT bundle with other work.
+
+## Content Strategy & Rules
+- Prefecture content in blog_posts (slug matches URL, lang_id=1); 49 posts exist
+- Tokyo updated Feb 15 2026 (11,778 chars, internal links, kanji/romaji, first-hand advice)
+- **Kanagawa prefecture content: DO NOT deploy or modify. Live page performing; draft held in reserve. Decision 2026-07-16.**
+- NOT generic AI text — real knowledge of foreigners working in Japan
+- FAQ schema auto-extracted from <h3>+<p> after "Frequently Asked Questions"
+  (Google retired FAQ rich results 2026-05-07 — keep for structure/AI-citation signal,
+  don't expect a SERP feature, don't add new ones for SERP)
+- Audience: foreigners with basic spoken Japanese, can't read kanji
+- Do NOT name competitors (baitoru, townwork, shigotoin); do NOT claim "no Japanese needed"
+- Include kanji+romaji: tewatashi (手渡し), zairyuu kaado (在留カード), etc.
+- "Provides job listings in English" (not "translates" — direct employer listings planned)
+- Interlink area / hand-cash / daily-payment / bed-making pages
+- FAQ answers must be NEW info; save Do's/Don'ts, phrases, bank-account guide for blog
+
+## Minimum Wages (as of Oct 2025)
+- Tokyo ¥1,226 | Kanagawa ¥1,225 | Osaka/Saitama/Chiba/Aichi/Kyoto/Hyogo ¥1,100+
+- National average ¥1,121 | Night premium mandatory 25% after 10 PM
+
+## Key Files
+- app/Models/Job.php — Job model; static parseBaseSalaryLd() wage parser
+- app/Http/Controllers/ListingController.php — frontend listings (buildStructuredData)
+- app/Http/Controllers/JobController.php — job detail pages (createSchema)
+- app/Http/Controllers/Admin/AnalyticsController.php — analytics dashboards
+- app/Http/Controllers/Admin/JobController.php — admin job management
+- app/Http/Controllers/Admin/CreateJobFromXmlController.php — XML import (img_link null crash open)
+- app/Services/JobDeduplicator.php — duplicate detection
+- resources/views/frontend/layouts/frontend.blade.php — main layout
+- resources/views/frontend/jobs/detail.blade.php — job detail
+- resources/views/frontend/layouts/scripts.blade.php — staggered JS
+
+## ValueCommerce Integration
+- OAuth bearer token for conversion tracking; raw curl (not Guzzle) to match headers
+- Cron: applogs:fetch every 1-2 hours
+
+## Google Search Console — Measurement Rules (Updated Aug 24, 2026)
+**CRITICAL: Google confirmed a logging error that made impressions wrong May 2025–Apr 2026.**
+Any impression, CTR, or position comparison spanning that window is meaningless. **Track
+clicks only.** See docs/gsc-measurement-notes-2026-08-24.md for full detail.
+
+### Current Performance (Japan mobile clicks, YoY matched months)
+- May: 424.3 → 527.3 (+24%) | Jun: 346.4 → 473.7 (+37%) | Jul: 335.0 → 411.9 (+23%)
+- Jun 1–Aug 24: 294.1 → 373.1 clicks/day (+27% YoY, every device up)
+- ~89% Japan, ~89% mobile, indexed ~6,600
+
+### Seasonality Pattern (Confirmed Two Years Running)
+- **Peak:** May (~525 clicks/day) — April fiscal/academic year start drives demand
+- **Trough:** December (~225 clicks/day) — 50% swing peak-to-trough
+- **Turn:** February, sharp rise through April
+- **Summer decline is NORMAL.** Between June and December, clicks fall. Do not diagnose
+  as a problem — compare YoY same period before investigating any change.
+- **Rule:** Build Sep–Feb (ship risky changes in quiet months). Harvest Apr–Jun (peak traffic).
+
+### What's Actually Growing (YoY clicks/day)
+- Hand-cash queries dominate: "hand cash part time job near me" +660%, "hand cash job
+  in kyoto" +286%, "handcash job near me part time" +209%
+- Brand: "nihon arubaito" +32%
+- Declining: "part time jobs near me" -8% (generic, worst converter)
+- **Three instruments agree hand-cash converts:** queries (largest YoY gains), landing
+  pages (hand-cash 10.32% CTR vs 1.94%), Facebook (hand-cash posts 2.48 vs 1.07 clicks/post)
+
+### Opportunity (Unchanged)
+- "weekend jobs" 164K impressions/28d, pos ~4, ~1 click (homepage surfaces, no landing page)
+- "night shift jobs" 49K/28d, "summer jobs" 12.5K/28d
+- Tag-system migration is the direct payoff for these
+
+### Confirmed Google Updates (No Impact)
+- May 2026 core (May 21–Jun 2): traffic **peaked** the week it completed
+- Jun 2026 spam (Jun 24–26), Aug 2026 spam (Aug 18–21): no step change observed
+- FAQ rich results removed May 7, 2026 (external, affects all sites, impression drop permanent)
+
+## Priorities
+1. Tag-system migration — weekend/night-shift/summer landing pages. Phase 1 schema done;
+   awaiting diagnostic precheck before Phase 2. Highest ROI (even 1% CTR on "weekend jobs"
+   ≈ +59 clicks/day). Precheck: latin1 collation trap; FK type match (bigint vs int unsigned).
+2. Origin cold-fetch latency (Singapore) — lower priority than previously thought.
+
+## Ongoing Tasks
+- Prefecture content: Tokyo done, Osaka next
+- Admin blog posts DataTable not showing rows (JS deployed, still broken)
+- Monitor INP in GSC
+- Blog section for guides
+- Fix XML img_link null crash in CreateJobFromXmlController (pairs with getThumbnailAttribute())
+- Image library rollout (154-prompt reference; Grok Imagine) — wire Blade + PHP model method
