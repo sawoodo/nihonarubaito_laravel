@@ -4,14 +4,14 @@
         <div class="col-md-3 col-sm-6 col-xs-12">
             <div class="input-group">
                 <span class="input-group-addon"><i class="fa fa-search"></i></span>
-                <input type="text" id="query" name="query" class="form-control" value="{{ $query }}" placeholder="{{ $content->search_keywords_label }}" tabindex="1">
+                <input type="text" id="query" name="query" class="form-control" value="{{ $query }}" placeholder="{{ $content->search_keywords_label }}" aria-label="Search keywords">
             </div>
         </div>
 
         <div class="col-md-3 col-sm-6 col-xs-12">
             <div class="input-group">
                 <span class="input-group-addon"><i class="fa fa-map-o"></i></span>
-                <select id="prefecture_id" name="prefecture_id" class="form-control" tabindex="2">
+                <select id="prefecture_id" name="prefecture_id" class="form-control" aria-label="Prefecture">
                     @foreach ($prefectures as $id => $name)
                         <option value="{{ $id }}" {{ (string) $id === (string) $prefecture_id ? 'selected' : '' }}>{{ $name }}</option>
                     @endforeach
@@ -22,7 +22,7 @@
         <div class="col-md-3 col-sm-6 col-xs-12">
             <div class="input-group">
                 <span class="input-group-addon"><i class="fa fa-map-marker fa-spin wobble-fix"></i></span>
-                <select id="area_id" name="area_id" class="form-control" tabindex="3">
+                <select id="area_id" name="area_id" class="form-control" aria-label="Area">
                     <option value="0">Select prefecture first</option>
                 </select>
             </div>

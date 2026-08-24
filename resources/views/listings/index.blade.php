@@ -25,15 +25,16 @@
                 @if (isset($regions) && count($regions) > 0)
                     <div class="row">
                         <div class="col-md-6">
-                            <div
+                            <button type="button"
                                 class="tag tw-mt-8 tw-bg-gradient-to-r hover:tw-from-rose-600 hover:tw-via-rose-600 hover:tw-to-orange-500
-                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group"
-                                role="button" data-toggle="collapse" href="#collapseHandCash" aria-expanded="false" aria-controls="collapseHandCash">
+                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group
+                                tw-w-full tw-text-left"
+                                data-toggle="collapse" data-target="#collapseHandCash" aria-expanded="false" aria-controls="collapseHandCash">
                                 <h2 class="tw-flex tw-justify-between tw-items-center tw-m-5 tw-text-3xl md:tw-text-5xl group-hover:tw-text-white poppinslight">
                                     {{ $content->hand_cash_label }}
-                                    <i class="fa fa-chevron-circle-down"></i>
+                                    <i class="fa fa-chevron-circle-down" aria-hidden="true"></i>
                                 </h2>
-                            </div>
+                            </button>
                             <ul class="list-group collapse tw-mb-0" id="collapseHandCash">
                                 @foreach ($regions as $region => $prefectures_in_region)
                                     <li class="list-group-item">
@@ -51,15 +52,16 @@
                             </ul>
                         </div>
                         <div class="col-md-6">
-                            <div
+                            <button type="button"
                                 class="tag tw-mt-8 tw-bg-gradient-to-r hover:tw-from-rose-600 hover:tw-via-rose-600 hover:tw-to-orange-500
-                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group"
-                                role="button" data-toggle="collapse" href="#collapsePartTime" aria-expanded="false" aria-controls="collapsePartTime">
+                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group
+                                tw-w-full tw-text-left"
+                                data-toggle="collapse" data-target="#collapsePartTime" aria-expanded="false" aria-controls="collapsePartTime">
                                 <h2 class="tw-flex tw-justify-between tw-items-center tw-m-5 tw-text-3xl md:tw-text-5xl group-hover:tw-text-white poppinslight">
                                     {{ $content->part_time_label }}
-                                    <i class="fa fa-chevron-circle-down"></i>
+                                    <i class="fa fa-chevron-circle-down" aria-hidden="true"></i>
                                 </h2>
-                            </div>
+                            </button>
                             <ul class="list-group collapse tw-mb-0" id="collapsePartTime">
                                 @foreach ($regions as $region => $prefectures_in_region)
                                     <li class="list-group-item">
@@ -83,15 +85,16 @@
                     <div class="row tw-my-8">
                         <div class="col-md-12">
 
-                            <div
+                            <button type="button"
                                 class="tag tw-mb-0 tw-bg-gradient-to-r hover:tw-from-rose-600 hover:tw-via-rose-600 hover:tw-to-orange-500
-                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group"
-                                role="button" data-toggle="collapse" href="#collapsePopularAreas" aria-expanded="false" aria-controls="collapsePopularAreas">
+                                tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group
+                                tw-w-full tw-text-left"
+                                data-toggle="collapse" data-target="#collapsePopularAreas" aria-expanded="false" aria-controls="collapsePopularAreas">
                                 <h2 class="tw-flex tw-justify-between tw-items-center tw-m-5 tw-text-3xl md:tw-text-5xl group-hover:tw-text-white poppinslight">
                                     Popular Areas
-                                    <i class="fa fa-chevron-circle-down"></i>
+                                    <i class="fa fa-chevron-circle-down" aria-hidden="true"></i>
                                 </h2>
-                            </div>
+                            </button>
 
                             <div class="row collapse list-group tw-mb-0" id="collapsePopularAreas">
                                 @foreach ($popular_areas as $prefecture => $areas)
@@ -120,14 +123,15 @@
                 <div class="row tw-my-8">
                     <div class="col-md-12">
 
-                        <div
+                        <button type="button"
                             class="tag tw-mb-0 tw-bg-gradient-to-r hover:tw-from-rose-600 hover:tw-via-rose-600 hover:tw-to-orange-500
-                            tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group"
-                            role="button" data-toggle="collapse" href="#collapsePopularStations" aria-expanded="false" aria-controls="collapsePopularStations">
+                            tw-border tw-border-black tw-border-solid tw-rounded-3xl tw-shadow-[5px_5px_10px_#727272] tw-group
+                            tw-w-full tw-text-left"
+                            data-toggle="collapse" data-target="#collapsePopularStations" aria-expanded="false" aria-controls="collapsePopularStations">
                             <h2 class="tw-flex tw-justify-between tw-items-center tw-m-5 tw-text-3xl md:tw-text-5xl group-hover:tw-text-white poppinslight">
-                                Popular Stations <i class="fa fa-chevron-circle-down"></i>
+                                Popular Stations <i class="fa fa-chevron-circle-down" aria-hidden="true"></i>
                             </h2>
-                        </div>
+                        </button>
 
                         <div class="row collapse list-group tw-mb-0" id="collapsePopularStations">
                             <div class="col-md-12">

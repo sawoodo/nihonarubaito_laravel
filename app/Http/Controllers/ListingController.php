@@ -6,6 +6,7 @@ use App\Models\Area;
 use App\Models\BlogPost;
 use App\Models\Category;
 use App\Models\Job;
+use App\Models\PopularArea;
 use App\Models\Prefecture;
 use App\Models\Region;
 use Illuminate\Http\Request;
@@ -799,12 +800,12 @@ class ListingController extends Controller
 
         // First link
         if ($currentPage > 1) {
-            $html .= '<li><a href="'.e($baseUrl).'/1'.e($qs).'"><span class="glyphicon glyphicon-fast-backward"></span></a></li>';
+            $html .= '<li><a href="'.e($baseUrl).'/1'.e($qs).'" aria-label="First page"><span class="glyphicon glyphicon-fast-backward" aria-hidden="true"></span></a></li>';
         }
 
         // Previous link
         if ($currentPage > 1) {
-            $html .= '<li><a href="'.e($baseUrl).'/'.($currentPage - 1).e($qs).'"><span class="glyphicon glyphicon-step-backward"></span></a></li>';
+            $html .= '<li><a href="'.e($baseUrl).'/'.($currentPage - 1).e($qs).'" aria-label="Previous page"><span class="glyphicon glyphicon-step-backward" aria-hidden="true"></span></a></li>';
         }
 
         // Page number links
@@ -821,12 +822,12 @@ class ListingController extends Controller
 
         // Next link
         if ($currentPage < $totalPages) {
-            $html .= '<li><a href="'.e($baseUrl).'/'.($currentPage + 1).e($qs).'"><span class="glyphicon glyphicon-step-forward"></span></a></li>';
+            $html .= '<li><a href="'.e($baseUrl).'/'.($currentPage + 1).e($qs).'" aria-label="Next page"><span class="glyphicon glyphicon-step-forward" aria-hidden="true"></span></a></li>';
         }
 
         // Last link
         if ($currentPage < $totalPages) {
-            $html .= '<li><a href="'.e($baseUrl).'/'.$totalPages.e($qs).'"><span class="glyphicon glyphicon-fast-forward"></span></a></li>';
+            $html .= '<li><a href="'.e($baseUrl).'/'.$totalPages.e($qs).'" aria-label="Last page"><span class="glyphicon glyphicon-fast-forward" aria-hidden="true"></span></a></li>';
         }
 
         $html .= '</ul>';
