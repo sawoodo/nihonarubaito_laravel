@@ -40,13 +40,17 @@ class FbQueueService
     {
         $jobs = $this->getEligibleJobs($page, $filters);
 
-        return $jobs->map(function ($job) use ($page) {
-            $score = $this->calculateScore($job);
+        // Precompute demand data ONCE for all station×category combos
+        $demandData = $this->precomputeDemandData();
+        $affiliateDemandData = $this->precomputeDemandData(true);
+
+        return $jobs->map(function ($job) use ($page, $demandData, $affiliateDemandData) {
+            $score = $this->calculateScore($job, $demandData);
             return (object) [
                 'job' => $job,
                 'score' => $score['total'],
                 'score_breakdown' => $score['breakdown'],
-                'boost_eligible' => $this->isBoostEligible($job),
+                'boost_eligible' => $this->isBoostEligible($job, $affiliateDemandData),
                 'suggested_format' => null, // Set after sorting
                 'headline' => $this->generateHeadline($job),
                 'post_url' => $this->generatePostUrl($job, $page, false),
@@ -120,6 +124,49 @@ class FbQueueService
 
     // ── Private helpers ──
 
+    /**
+     * Precompute demand data for all station×category combos (run ONCE)
+     */
+    private function precomputeDemandData(bool $affiliateOnly = false): array
+    {
+        // Get application_logs applies
+        $query1 = DB::table('application_logs as al')
+            ->join('jobs as j', 'al.job_no', '=', 'j.job_no')
+            ->where('al.order_date', '>=', now()->subDays(120))
+            ->select('j.station', 'j.job_category_id', DB::raw('COUNT(*) as applies'));
+
+        if ($affiliateOnly) {
+            $query1->where('j.apply_link', 'LIKE', '%shigotoin.com%');
+        }
+
+        $appliesData1 = $query1->groupBy('j.station', 'j.job_category_id')->get();
+
+        // Get secondary_applies
+        $query2 = DB::table('secondary_applies as sa')
+            ->join('jobs as j', 'sa.job_no', '=', 'j.job_no')
+            ->where('sa.apply_date', '>=', now()->subDays(120))
+            ->select('j.station', 'j.job_category_id', DB::raw('COUNT(*) as applies'));
+
+        if ($affiliateOnly) {
+            $query2->where('j.apply_link', 'LIKE', '%shigotoin.com%');
+        }
+
+        $appliesData2 = $query2->groupBy('j.station', 'j.job_category_id')->get();
+
+        // Merge both datasets into keyed array
+        $result = [];
+        foreach ($appliesData1 as $row) {
+            $key = "{$row->station}_{$row->job_category_id}";
+            $result[$key] = $row->applies;
+        }
+        foreach ($appliesData2 as $row) {
+            $key = "{$row->station}_{$row->job_category_id}";
+            $result[$key] = ($result[$key] ?? 0) + $row->applies;
+        }
+
+        return $result;
+    }
+
     private function getEligibleJobs(string $page, array $filters): Collection
     {
         $prefectures = self::TERRITORY_MAP[$page] ?? [];
@@ -129,7 +176,15 @@ class FbQueueService
             ->with(['category', 'language']) // Eager load relationships
             ->where('jobs.job_status_id', Job::STATUS_PUBLISHED)
             ->where('jobs.lang_id', 1) // English only
-            ->whereIn('prefectures.english', $prefectures);
+            ->whereIn('prefectures.english', $prefectures)
+            // Bound to recent candidates only (last 60 days)
+            ->where('jobs.date', '>=', now()->subDays(60))
+            // Exclude jobs expiring in next 7 days (too soon to post)
+            ->where(function($q) {
+                $q->whereNull('jobs.delete_at')
+                  ->orWhere('jobs.delete_at', '>', now()->addDays(7));
+            })
+            ->limit(500); // Safety cap per page
 
         // Exclude jobs posted to this page in last 14 days
         $recentlyPosted = FbPostedLog::where('page', $page)
@@ -166,13 +221,14 @@ class FbQueueService
         return $query->get();
     }
 
-    private function calculateScore($job): array
+    private function calculateScore($job, array $demandData): array
     {
         $breakdown = [];
         $total = 0;
 
-        // Demand points (station×category applies, 120 days)
-        $demandApplies = $this->getStationCategoryApplies($job->station, $job->job_category_id);
+        // Demand points (station×category applies, 120 days) - from precomputed data
+        $key = "{$job->station}_{$job->job_category_id}";
+        $demandApplies = $demandData[$key] ?? 0;
         if ($demandApplies >= 50) {
             $breakdown[] = '+3 demand (≥50 applies)';
             $total += 3;
@@ -230,7 +286,7 @@ class FbQueueService
         ];
     }
 
-    private function isBoostEligible($job): bool
+    private function isBoostEligible($job, array $affiliateDemandData): bool
     {
         // Must be affiliate
         if (!$this->isAffiliate($job)) {
@@ -247,8 +303,9 @@ class FbQueueService
             return false;
         }
 
-        // Station×category must have ≥3 affiliate applies (120 days)
-        $affiliateApplies = $this->getStationCategoryApplies($job->station, $job->job_category_id, true);
+        // Station×category must have ≥3 affiliate applies (120 days) - from precomputed data
+        $key = "{$job->station}_{$job->job_category_id}";
+        $affiliateApplies = $affiliateDemandData[$key] ?? 0;
         if ($affiliateApplies < 3) {
             return false;
         }
