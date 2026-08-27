@@ -396,39 +396,46 @@ class FbQueueService
 
     private function generateFormattedPost($job, string $page): string
     {
-        // Headline (hook + category + station + wage)
-        $headline = $this->generateHeadline($job);
+        // Title line: {Title} at {Station} Station 駅 in {Prefecture} {wage}円
+        $title = strip_tags($job->title ?? '');
+        $station = strip_tags($job->station ?? '');
+        $prefecture = $job->prefecture_name ?? '';
+        $wage = preg_replace('/[^\d]/', '', $job->wage ?? '0');
 
-        // Description (strip HTML, truncate to first 2-3 sentences for FB)
-        $description = strip_tags($job->description ?? '');
+        $titleLine = "{$title} at {$station} Station 駅 in {$prefecture} {$wage}円";
+
+        // Body: full description as prose (strip HTML, convert <br> to newlines)
+        $description = $job->description ?? '';
         $description = str_replace(['<br>', '<br/>', '<br />'], "\n", $description);
-        // Truncate to ~250 chars (roughly 2-3 sentences)
-        if (strlen($description) > 250) {
-            $description = substr($description, 0, 250);
-            $lastPeriod = strrpos($description, '.');
-            if ($lastPeriod !== false) {
-                $description = substr($description, 0, $lastPeriod + 1);
-            } else {
-                $description .= '...';
-            }
+        $description = strip_tags($description);
+        $description = trim($description);
+
+        // Detail lines (each field on its own line, no labels/emoji)
+        $stationAccess = strip_tags($job->station ?? '');
+        $workingHours = strip_tags($job->working_hours ?? '');
+        $workingDays = strip_tags($job->working_days ?? '');
+
+        // Link: Check Job Detail: {URL}?utm_source=fb&src=shi
+        $baseUrl = url($job->detail_path);
+        $link = "{$baseUrl}?utm_source=fb&src=shi";
+
+        // Assemble formatted post (prose-based, no emoji)
+        $post = "{$titleLine}\n\n";
+        $post .= "{$description}\n\n";
+
+        if ($stationAccess) {
+            $post .= "{$stationAccess}\n";
+        }
+        if ($workingHours) {
+            $post .= "{$workingHours}\n";
+        }
+        if ($workingDays) {
+            $post .= "{$workingDays}\n";
         }
 
-        // Details block
-        $station = strip_tags($job->station ?? '');
-        $workingHours = strip_tags($job->working_hours ?? 'Flexible hours');
-        $wage = preg_replace('/[^\d]/', '', $job->wage ?? '0');
-        $wageDetail = $job->wage_detail ? ' ' . strip_tags($job->wage_detail) : '';
+        $post .= "\nCheck Job Detail: {$link}";
 
-        // Link with UTM
-        $link = $this->generatePostUrl($job, $page, false);
-
-        // Assemble formatted post
-        return "{$headline}\n\n"
-            . "{$description}\n\n"
-            . "📍 {$station} Station 駅\n"
-            . "⏰ {$workingHours}\n"
-            . "💴 ¥{$wage}/hr{$wageDetail}\n\n"
-            . "Apply here 👉 {$link}";
+        return $post;
     }
 
     private function generatePostUrl($job, string $page, bool $isBoost): string
