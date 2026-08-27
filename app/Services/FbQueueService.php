@@ -74,8 +74,8 @@ class FbQueueService
             ->where('jobs.job_status_id', Job::STATUS_PUBLISHED)
             ->where('jobs.lang_id', 1) // English only
             ->whereNotIn('prefectures.english', $allTerritoryPrefectures)
-            ->where('jobs.created_at', '>=', now()->subHours(48))
-            ->orderBy('jobs.created_at', 'desc')
+            ->where('jobs.date', '>=', now()->subHours(48))
+            ->orderBy('jobs.date', 'desc')
             ->get()
             ->groupBy('prefecture_name');
     }
