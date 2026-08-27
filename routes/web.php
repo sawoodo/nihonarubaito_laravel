@@ -142,11 +142,6 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('images/{id}/update-info', [Admin\ImageController::class, 'updateInfo'])->name('admin.images.update-info');
     Route::post('images/{id}/update', [Admin\ImageController::class, 'updateInfo']);
 
-    // FB Scheduled Posts (admin only)
-    Route::get('fb-scheduled-posts', [Admin\FbScheduledPostController::class, 'index'])->name('admin.fb-scheduled-posts.index');
-    Route::match(['get', 'post'], 'fb-scheduled-posts/{id}/edit', [Admin\FbScheduledPostController::class, 'edit'])->name('admin.fb-scheduled-posts.edit');
-    Route::get('fb-scheduled-posts/{id}/post', [Admin\FbScheduledPostController::class, 'postOnFb'])->name('admin.fb-scheduled-posts.post');
-
     // Areas (admin only)
     Route::get('areas', [Admin\AreaController::class, 'index'])->name('admin.areas.index');
     Route::match(['get', 'post'], 'areas/{id}/edit', [Admin\AreaController::class, 'edit'])->name('admin.areas.edit');
