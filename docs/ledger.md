@@ -4,6 +4,39 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-08-27 — Empty homepage cache poisoning: never cache 0-job renders
+
+**Symptom:** Homepage shows "No job found" on cookieless first load (Googlebot, private browsers, first-time visitors); refresh shows jobs. AdSense Auto Ads placed 0 in-page ads (scanned the empty page).
+
+**Root cause:** CDN cached a stale empty/Japanese render (likely from Aug 12 language outage). ApplyCacheHeaders set `Cache-Control: max-age=1800, public` on ANY English response, including empty ones. If the app momentarily returned 0 jobs, CDN served that empty page to cookieless visitors for 30 minutes.
+
+**Diagnosis evidence:**
+- Gate 1 query: 5,661 published English jobs exist (lang_id=1) — app layer clean, query correct
+- Gate 2 cookieless curl: Cache EXPIRED, fresh response contains 90 job links — currently working, but risk of regression
+- Verdict: (B) Cache-layer bug, not app-layer data mismatch
+
+**Fix (deployed 2026-08-27):**
+Two guards in ApplyCacheHeaders, following existing non-English-poisoning pattern (early return → Set-Cookie survives → nginx refuses to cache):
+
+1. `ListingController::index()` sets `skip_cache_empty` flag when `$totalRows === 0`
+2. `ApplyCacheHeaders` checks flag and returns early if set
+
+Result: Empty renders stay uncached (Set-Cookie preserved); populated pages still cache 30 min. Driven by actual query count ($totalRows), not fragile HTML parsing.
+
+**Regression test (run after every deploy touching homepage/cache):**
+```bash
+curl -s -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15' \
+  https://nihonarubaito.com/ | grep -c "detail/english"
+# Expected: 50-90 (page size dependent)
+# Failure: 0 or <10 indicates empty homepage cached
+```
+
+**Post-fix verification:** 90 job links on cookieless request (2026-08-27)
+
+**Note:** FrontendComposer emergency override (forces English) remains in place — its removal is a separate task pending language path verification.
+
+---
+
 ## 2026-07-22 — Bulk-edit lessons (visa-hours correction, 10 pages)
 
 - **Protected-page flags belong in the exclusion list.** Kanagawa carried a DO-NOT-MODIFY flag and was still swept into a 10-page bulk edit, because the exclusion list only covered content-based exceptions (Saitama's earnings line). Standing instructions need checking *before* writing a multi-page update.
