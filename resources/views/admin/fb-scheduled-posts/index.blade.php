@@ -211,15 +211,43 @@
 @push('scripts')
 <script>
 $(document).ready(function() {
-    // Copy to clipboard
+    // Copy to clipboard with fallback
+    function copyToClipboard(text, $btn) {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(
+                () => showSuccess($btn),
+                () => fallbackCopy(text, $btn)
+            );
+        } else {
+            fallbackCopy(text, $btn);
+        }
+    }
+
+    function fallbackCopy(text, $btn) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            showSuccess($btn);
+        } catch (e) {
+            alert('Copy failed — select and copy manually:\n\n' + text);
+        }
+        document.body.removeChild(ta);
+    }
+
+    function showSuccess($btn) {
+        const originalText = $btn.html();
+        $btn.html('<i class="fa fa-check"></i> Copied');
+        setTimeout(() => $btn.html(originalText), 2000);
+    }
+
     $('.copy-btn').on('click', function() {
         const text = $(this).data('copy');
-        navigator.clipboard.writeText(text).then(() => {
-            const $btn = $(this);
-            const originalText = $btn.html();
-            $btn.html('<i class="fa fa-check"></i> Copied');
-            setTimeout(() => $btn.html(originalText), 2000);
-        });
+        copyToClipboard(text, $(this));
     });
 
     // Mark as posted
