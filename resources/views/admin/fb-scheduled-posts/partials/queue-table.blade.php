@@ -78,8 +78,8 @@
                     </td>
                     <td>
                         <button class="btn btn-xs btn-info copy-btn"
-                                data-copy="{{ $item->headline }}&#10;&#10;{{ $item->post_url }}">
-                            <i class="fa fa-copy"></i> Copy
+                                data-copy="{{ $item->formatted_post }}">
+                            <i class="fa fa-copy"></i> Copy Post
                         </button>
                         <button class="btn btn-xs btn-success mark-btn"
                                 data-job-no="{{ $item->job->job_no }}"

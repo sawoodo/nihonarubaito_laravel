@@ -53,6 +53,7 @@ class FbQueueService
                 'boost_eligible' => $this->isBoostEligible($job, $affiliateDemandData),
                 'suggested_format' => null, // Set after sorting
                 'headline' => $this->generateHeadline($job),
+                'formatted_post' => $this->generateFormattedPost($job, $page),
                 'post_url' => $this->generatePostUrl($job, $page, false),
                 'boost_url' => $this->generatePostUrl($job, $page, true),
                 'days_until_expiry' => $this->daysUntilExpiry($job),
@@ -391,6 +392,43 @@ class FbQueueService
         $wage = preg_replace('/[^\d]/', '', $job->wage ?? '0');
 
         return "{$hook}{$category} at {$station} Station 駅, ¥{$wage}/hr";
+    }
+
+    private function generateFormattedPost($job, string $page): string
+    {
+        // Headline (hook + category + station + wage)
+        $headline = $this->generateHeadline($job);
+
+        // Description (strip HTML, truncate to first 2-3 sentences for FB)
+        $description = strip_tags($job->description ?? '');
+        $description = str_replace(['<br>', '<br/>', '<br />'], "\n", $description);
+        // Truncate to ~250 chars (roughly 2-3 sentences)
+        if (strlen($description) > 250) {
+            $description = substr($description, 0, 250);
+            $lastPeriod = strrpos($description, '.');
+            if ($lastPeriod !== false) {
+                $description = substr($description, 0, $lastPeriod + 1);
+            } else {
+                $description .= '...';
+            }
+        }
+
+        // Details block
+        $station = strip_tags($job->station ?? '');
+        $workingHours = strip_tags($job->working_hours ?? 'Flexible hours');
+        $wage = preg_replace('/[^\d]/', '', $job->wage ?? '0');
+        $wageDetail = $job->wage_detail ? ' ' . strip_tags($job->wage_detail) : '';
+
+        // Link with UTM
+        $link = $this->generatePostUrl($job, $page, false);
+
+        // Assemble formatted post
+        return "{$headline}\n\n"
+            . "{$description}\n\n"
+            . "📍 {$station} Station 駅\n"
+            . "⏰ {$workingHours}\n"
+            . "💴 ¥{$wage}/hr{$wageDetail}\n\n"
+            . "Apply here 👉 {$link}";
     }
 
     private function generatePostUrl($job, string $page, bool $isBoost): string
