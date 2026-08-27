@@ -51,6 +51,14 @@ class ListingController extends Controller
         $offset = ($page - 1) * self::PER_PAGE;
 
         $totalRows = Job::allForFrontend($langName, $langId)->count();
+
+        // Signal to ApplyCacheHeaders: never CDN-cache an empty homepage render.
+        // An empty page cached for 30 min is served to every cookieless visitor
+        // (and Googlebot) until it expires — the empty-first-load bug.
+        if ($totalRows === 0) {
+            $request->attributes->set('skip_cache_empty', true);
+        }
+
         $jobs = Job::allForFrontend($langName, $langId)
             ->skip($offset)
             ->take(self::PER_PAGE)

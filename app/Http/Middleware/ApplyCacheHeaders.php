@@ -44,6 +44,13 @@ class ApplyCacheHeaders
             return $response;
         }
 
+        // Never cache an empty homepage render. If the listing query returned zero
+        // jobs, returning early preserves Set-Cookie, which makes nginx refuse to
+        // cache the response — so an empty page can never poison the shared CDN cache.
+        if ($request->attributes->get('skip_cache_empty')) {
+            return $response;
+        }
+
         // Strip all Set-Cookie headers so SiteGround's proxy will cache
         $response->headers->remove('Set-Cookie');
 
