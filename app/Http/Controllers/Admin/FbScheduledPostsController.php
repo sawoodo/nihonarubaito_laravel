@@ -39,9 +39,11 @@ class FbScheduledPostsController extends Controller
             $osakaQueue = $osakaQueue->where('boost_eligible', true)->values();
         }
 
-        // Supporting panels
-        $siteOnlyJobs = $this->queueService->getSiteOnlyJobs();
-        $sourcingGaps = $this->queueService->getSourcingGaps();
+        // Supporting panels - TEMPORARILY DISABLED (Phase 8, secondary features)
+        // $siteOnlyJobs = $this->queueService->getSiteOnlyJobs();
+        // $sourcingGaps = $this->queueService->getSourcingGaps();
+        $siteOnlyJobs = collect();
+        $sourcingGaps = collect();
 
         return view('admin.fb-scheduled-posts.index', compact(
             'tokyoQueue',
