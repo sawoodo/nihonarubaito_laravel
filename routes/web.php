@@ -79,6 +79,11 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('analytics/duplicates/bulk-dismiss', [Admin\AnalyticsController::class, 'bulkDismiss'])->name('admin.analytics.duplicates.bulk-dismiss');
     Route::post('analytics/duplicates/undismiss', [Admin\AnalyticsController::class, 'undismissGroup'])->name('admin.analytics.duplicates.undismiss');
 
+    // Facebook Scheduled Posts
+    Route::get('fb-scheduled-posts', [Admin\FbScheduledPostsController::class, 'index'])->name('admin.fb.index');
+    Route::post('fb-scheduled-posts/mark-posted', [Admin\FbScheduledPostsController::class, 'markPosted'])->name('admin.fb.markPosted');
+    Route::get('fb-scheduled-posts/export', [Admin\FbScheduledPostsController::class, 'export'])->name('admin.fb.export');
+
     // Jobs
     Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');
     Route::post('jobs/create-from-xml/upload-file', [Admin\CreateJobFromXmlController::class, 'uploadFile'])->name('admin.jobs.create-from-xml.upload');
