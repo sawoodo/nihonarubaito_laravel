@@ -441,8 +441,7 @@ class JobController extends Controller
             return;
         }
 
-        $applyLink = url($job->detail_path)
-            . '?utm_source=fb&src=' . $this->getJobSource($job->apply_link);
+        $applyLink = url($job->detail_path).'?utm_source=fb';
         $desc = strip_tags(str_replace(['<br/>', '<br>', '<br />'], ' ', $job->description ?? ''));
 
         $content = $job->title."\n\n"
@@ -467,32 +466,10 @@ class JobController extends Controller
             'content' => $content,
             'lang_id' => $job->lang_id,
             'link' => $applyLink,
-            'prefecture_id' => $job->prefecture_id,
             'published' => false,
             'created_at' => date('Y-m-d H:i:s'),
             'scheduled_at' => $scheduledAt,
         ]);
-    }
-
-    private function getJobSource(?string $applyLink): string
-    {
-        $host = parse_url((string) $applyLink, PHP_URL_HOST) ?? '';
-        if ($host === '') {
-            return 'na';
-        }
-
-        return match (true) {
-            str_contains($host, 'shigotoin')     => 'shi',
-            str_contains($host, 'baitoru')       => 'bt',
-            str_contains($host, 'family.co.jp')  => 'fm',
-            str_contains($host, 'sej.co.jp')     => 'sej',
-            str_contains($host, 'arubaito-ex')   => 'aex',
-            str_contains($host, 'sftworks')      => 'sft',
-            str_contains($host, 'gigabaito')     => 'gb',
-            str_contains($host, 'mynavi')        => 'mn',
-            str_contains($host, 'machbaito')     => 'mb',
-            default                              => 'x',
-        };
     }
 
     public function draft(string $jobNo)

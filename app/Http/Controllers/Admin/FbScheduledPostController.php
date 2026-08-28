@@ -24,8 +24,7 @@ class FbScheduledPostController extends Controller
     {
         $this->authorizeAdmin();
 
-        $prefectureId = (int) $request->input('prefecture_id', 0);
-        $q = trim((string) $request->input('q', ''));
+        $q = $request->input('q', '');
         $createdAt = $request->input('created_at', '');
         $scheduledAt = $request->input('scheduled_at', '');
 
@@ -35,17 +34,9 @@ class FbScheduledPostController extends Controller
         $query = FbPost::select('fb_posts.*', 'l.english as language')
             ->leftJoin('languages as l', 'fb_posts.lang_id', '=', 'l.id');
 
-        // Prefecture — indexed column, fast
-        if ($prefectureId > 0) {
-            $query->where('fb_posts.prefecture_id', $prefectureId);
-        }
-
-        // Content — leading wildcard, so this CANNOT use an index and scans the table.
-        // 3-char minimum keeps short queries from matching most of 22,080 rows.
-        if (mb_strlen($q) >= 3) {
+        if ($q) {
             $query->where('fb_posts.content', 'like', "%{$q}%");
         }
-
         if ($createdAt) {
             $query->whereDate('fb_posts.created_at', $this->parseDatepickerDate($createdAt));
         }
@@ -65,18 +56,13 @@ class FbScheduledPostController extends Controller
             $totalRows,
             self::PER_PAGE,
             $page,
-            $request->only(['prefecture_id', 'q', 'created_at', 'scheduled_at'])
+            $request->only(['q', 'created_at', 'scheduled_at'])
         );
-
-        // Load prefectures for dropdown
-        $prefectures = DB::table('prefectures')->orderBy('english')->get();
 
         return view('admin.fb-scheduled-posts.index', [
             'activeSideMenu' => 'fb_scheduled_posts',
             'fb_posts'       => $posts,
             'pagination'     => $pagination,
-            'prefectures'    => $prefectures,
-            'prefectureId'   => $prefectureId,
             'q'              => $q,
             'created_at'     => $createdAt,
             'scheduled_at'   => $scheduledAt,

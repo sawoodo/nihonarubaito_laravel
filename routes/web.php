@@ -79,11 +79,6 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('analytics/duplicates/bulk-dismiss', [Admin\AnalyticsController::class, 'bulkDismiss'])->name('admin.analytics.duplicates.bulk-dismiss');
     Route::post('analytics/duplicates/undismiss', [Admin\AnalyticsController::class, 'undismissGroup'])->name('admin.analytics.duplicates.undismiss');
 
-    // Facebook Scheduled Posts
-    Route::get('fb-scheduled-posts', [Admin\FbScheduledPostsController::class, 'index'])->name('admin.fb.index');
-    Route::post('fb-scheduled-posts/mark-posted', [Admin\FbScheduledPostsController::class, 'markPosted'])->name('admin.fb.markPosted');
-    Route::get('fb-scheduled-posts/export', [Admin\FbScheduledPostsController::class, 'export'])->name('admin.fb.export');
-
     // Jobs
     Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');
     Route::post('jobs/create-from-xml/upload-file', [Admin\CreateJobFromXmlController::class, 'uploadFile'])->name('admin.jobs.create-from-xml.upload');
@@ -141,6 +136,11 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('images/upload', [Admin\ImageController::class, 'upload'])->name('admin.images.upload');
     Route::post('images/{id}/update-info', [Admin\ImageController::class, 'updateInfo'])->name('admin.images.update-info');
     Route::post('images/{id}/update', [Admin\ImageController::class, 'updateInfo']);
+
+    // FB Scheduled Posts (admin only)
+    Route::get('fb-scheduled-posts', [Admin\FbScheduledPostController::class, 'index'])->name('admin.fb-scheduled-posts.index');
+    Route::match(['get', 'post'], 'fb-scheduled-posts/{id}/edit', [Admin\FbScheduledPostController::class, 'edit'])->name('admin.fb-scheduled-posts.edit');
+    Route::get('fb-scheduled-posts/{id}/post', [Admin\FbScheduledPostController::class, 'postOnFb'])->name('admin.fb-scheduled-posts.post');
 
     // Areas (admin only)
     Route::get('areas', [Admin\AreaController::class, 'index'])->name('admin.areas.index');

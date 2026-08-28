@@ -10,7 +10,7 @@ class FbPost extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'link', 'content', 'lang_id', 'prefecture_id', 'published',
+        'link', 'content', 'lang_id', 'published',
         'created_at', 'scheduled_at', 'run_at', 'run_type',
     ];
 
