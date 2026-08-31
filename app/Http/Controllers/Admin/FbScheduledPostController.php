@@ -27,16 +27,25 @@ class FbScheduledPostController extends Controller
         $q = $request->input('q', '');
         $createdAt = $request->input('created_at', '');
         $scheduledAt = $request->input('scheduled_at', '');
+        $prefectureId = $request->input('prefecture_id', '');
 
         $page = max(1, (int) $request->input('page', 1));
         $offset = ($page - 1) * self::PER_PAGE;
 
-        $query = FbPost::select('fb_posts.*', 'l.english as language')
-            ->leftJoin('languages as l', 'fb_posts.lang_id', '=', 'l.id');
+        $query = FbPost::select('fb_posts.*', 'l.english as language', 'p.english as prefecture_name')
+            ->leftJoin('languages as l', 'fb_posts.lang_id', '=', 'l.id')
+            ->leftJoin('prefectures as p', 'fb_posts.prefecture_id', '=', 'p.id');
 
-        if ($q) {
+        // Prefecture filter
+        if ($prefectureId) {
+            $query->where('fb_posts.prefecture_id', $prefectureId);
+        }
+
+        // Content search (3-char minimum enforced client-side, guarded server-side)
+        if ($q && mb_strlen(trim($q)) >= 3) {
             $query->where('fb_posts.content', 'like', "%{$q}%");
         }
+
         if ($createdAt) {
             $query->whereDate('fb_posts.created_at', $this->parseDatepickerDate($createdAt));
         }
@@ -56,16 +65,21 @@ class FbScheduledPostController extends Controller
             $totalRows,
             self::PER_PAGE,
             $page,
-            $request->only(['q', 'created_at', 'scheduled_at'])
+            $request->only(['q', 'created_at', 'scheduled_at', 'prefecture_id'])
         );
+
+        // Get all prefectures for dropdown
+        $prefectures = \App\Models\Prefecture::orderBy('english')->get();
 
         return view('admin.fb-scheduled-posts.index', [
             'activeSideMenu' => 'fb_scheduled_posts',
             'fb_posts'       => $posts,
             'pagination'     => $pagination,
+            'prefectures'    => $prefectures,
             'q'              => $q,
             'created_at'     => $createdAt,
             'scheduled_at'   => $scheduledAt,
+            'prefecture_id'  => $prefectureId,
         ]);
     }
 

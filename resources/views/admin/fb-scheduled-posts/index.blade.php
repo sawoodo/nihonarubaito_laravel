@@ -20,11 +20,23 @@
                     <div class="text-center">{!! $pagination !!}</div>
                 @endif
 
-                <form action="{{ url('admin/fb-scheduled-posts') }}" method="GET" class="tw-py-4{{ $pagination ? '' : ' tw-mt-8' }}">
+                <form action="{{ url('admin/fb-scheduled-posts') }}" method="GET" id="fb-filter-form" class="tw-py-4{{ $pagination ? '' : ' tw-mt-8' }}">
                     <div class="row">
-                        <div class="col-md-5">
-                            <label class="control-label">Content</label>
-                            <input type="text" name="q" value="{{ e($q) }}" class="form-control" placeholder="Search content...">
+                        <div class="col-md-3">
+                            <label class="control-label">Content (3+ chars)</label>
+                            <input type="text" name="q" id="content-search" value="{{ e($q) }}" class="form-control" placeholder="Search content..." autocomplete="off">
+                        </div>
+
+                        <div class="col-md-2">
+                            <label class="control-label">Prefecture</label>
+                            <select name="prefecture_id" id="prefecture_id" class="form-control" onchange="document.getElementById('fb-filter-form').submit()">
+                                <option value="">All prefectures</option>
+                                @foreach($prefectures as $pref)
+                                    <option value="{{ $pref->id }}" {{ (string)$prefecture_id === (string)$pref->id ? 'selected' : '' }}>
+                                        {{ $pref->english }}
+                                    </option>
+                                @endforeach
+                            </select>
                         </div>
 
                         <div class="col-md-2">
@@ -156,4 +168,22 @@
 @push('page-scripts')
 <script src="{{ url('plugins/datepicker/bootstrap-datepicker.js') }}"></script>
 <script src="{{ url('js/backend-app-pages/admin/fb_scheduled_posts/index.js') }}"></script>
+<script>
+(function () {
+    const input = document.getElementById('content-search');
+    const form  = document.getElementById('fb-filter-form');
+    if (!input || !form) return;
+
+    let timer = null;
+
+    input.addEventListener('input', function () {
+        clearTimeout(timer);
+        const val = input.value.trim();
+        // Trigger after 3+ chars, OR when cleared (to reset)
+        if (val.length >= 3 || val.length === 0) {
+            timer = setTimeout(function () { form.submit(); }, 400); // 400ms debounce
+        }
+    });
+})();
+</script>
 @endpush
