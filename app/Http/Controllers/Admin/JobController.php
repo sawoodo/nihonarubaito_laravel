@@ -465,6 +465,7 @@ class JobController extends Controller
         FbPost::create([
             'content' => $content,
             'lang_id' => $job->lang_id,
+            'prefecture_id' => $job->prefecture_id,
             'link' => $applyLink,
             'published' => false,
             'created_at' => date('Y-m-d H:i:s'),
