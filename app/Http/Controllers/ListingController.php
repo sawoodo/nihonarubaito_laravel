@@ -159,6 +159,12 @@ class ListingController extends Controller
         $offset = ($page - 1) * self::PER_PAGE;
 
         $totalRows = Job::search($langId, $langName, $query, $prefectureId, $areaId, $categories)->count();
+
+        // Signal to ApplyCacheHeaders: never CDN-cache an empty render.
+        if ($totalRows === 0) {
+            $request->attributes->set('skip_cache_empty', true);
+        }
+
         $jobs = Job::search($langId, $langName, $query, $prefectureId, $areaId, $categories)
             ->skip($offset)
             ->take(self::PER_PAGE)
@@ -308,6 +314,14 @@ class ListingController extends Controller
         $offset = ($page - 1) * self::PER_PAGE;
 
         $totalRows = Job::search($langId, $langName, $query, $prefectureId, $areaId)->count();
+
+        // Signal to ApplyCacheHeaders: never CDN-cache an empty render.
+        // An empty page cached for 30 min is served to every cookieless visitor
+        // (and Googlebot) until it expires — the empty-first-load bug.
+        if ($totalRows === 0) {
+            $request->attributes->set('skip_cache_empty', true);
+        }
+
         $jobs = Job::search($langId, $langName, $query, $prefectureId, $areaId)
             ->skip($offset)
             ->take(self::PER_PAGE)
