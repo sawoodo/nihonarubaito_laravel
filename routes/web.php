@@ -142,6 +142,9 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::match(['get', 'post'], 'fb-scheduled-posts/{id}/edit', [Admin\FbScheduledPostController::class, 'edit'])->name('admin.fb-scheduled-posts.edit');
     Route::get('fb-scheduled-posts/{id}/post', [Admin\FbScheduledPostController::class, 'postOnFb'])->name('admin.fb-scheduled-posts.post');
 
+    // FB Scheduled Posts V2 (admin only) - Enhanced queue view
+    Route::get('fb-scheduled-posts-v2', [Admin\FbScheduledPostsV2Controller::class, 'index'])->name('admin.fb-v2.index');
+
     // Areas (admin only)
     Route::get('areas', [Admin\AreaController::class, 'index'])->name('admin.areas.index');
     Route::match(['get', 'post'], 'areas/{id}/edit', [Admin\AreaController::class, 'edit'])->name('admin.areas.edit');

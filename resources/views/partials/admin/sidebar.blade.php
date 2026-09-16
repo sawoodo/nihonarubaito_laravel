@@ -100,6 +100,12 @@
                 </li>
 
                 <li>
+                    <a href="{{ url('admin/fb-scheduled-posts-v2') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'fb_scheduled_posts_v2' ? 'class="active"' : '' !!}>
+                        <i class="fa fa-facebook-square fa-2x fa-fw tw-text-blue-600"></i> Scheduled Post V2
+                    </a>
+                </li>
+
+                <li>
                     <a href="{{ url('admin/blog-posts') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'blog_posts' ? 'class="active"' : '' !!}>
                         <i class="fa fa-rss-square fa-2x fa-fw tw-text-indigo-600"></i> Blog Posts
                     </a>
