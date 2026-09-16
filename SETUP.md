@@ -88,7 +88,59 @@ ssh nihonarubaito 'whoami'
 - On the machine you switch to, **`git pull` first**.
 - If `git pull` reports a conflict, stop and resolve it before doing anything else. Don't deploy from a conflicted tree.
 
-## 4. Later: running the app locally
+## 4. Drift check: git vs production
+
+Deploys are manual, so production and git drift apart. On 2026-09-17 this check found a whole feature (FB Scheduled Posts V2) that was live but never committed. Deploying git's `routes/web.php` or `FbPost.php` would have silently removed it.
+
+**Run it monthly, before any large deploy, and after working from a machine you haven't used in a while.** Start from a clean, up-to-date tree (`git pull`, `git status` clean). Run from the repo root in bash (macOS Terminal or Git Bash on Windows):
+
+```bash
+R=www/nihonarubaito.com/public_html/laravel
+T=$(mktemp -d)
+hash() { if command -v md5sum >/dev/null; then md5sum "$1" | cut -d' ' -f1; else md5 -q "$1"; fi; }
+
+# 1. Hash every tracked file locally and on the server
+git ls-files > $T/tracked.txt
+while IFS= read -r f; do echo "$(hash "$f")  $f"; done < $T/tracked.txt | sort -k2 > $T/local.md5
+ssh nihonarubaito "cd $R && while IFS= read -r f; do if [ -f \"\$f\" ]; then md5sum \"\$f\"; else echo \"MISSING  \$f\"; fi; done" < $T/tracked.txt | sort -k2 > $T/server.md5
+
+# 2. In git but missing on the server
+grep '^MISSING' $T/server.md5
+
+# 3. In git but different on the server
+join -1 2 -2 2 $T/local.md5 <(grep -v '^MISSING' $T/server.md5) | awk '$2!=$3{print $1}'
+
+# 4. On the server but not in git (stray/backup files, or undeployed-to-git code)
+ssh nihonarubaito "cd $R && find . -type f -not -path './vendor/*' -not -path './node_modules/*' -not -path './storage/*' -not -path './bootstrap/cache/*' | sed 's|^\./||' | sort" \
+  | comm -13 <(sort $T/tracked.txt) - | grep -vE '\.(bak|backup|broken)|\.bak\.'
+```
+
+For every file in step 3, look at the actual diff before deciding which side is right:
+
+```bash
+scp nihonarubaito:$R/path/to/file $T/server-file && diff -w path/to/file $T/server-file
+```
+
+- **Server has changes git doesn't:** copy the server file into the repo unchanged (don't run Pint on it), check its hash matches, then commit and push. **Do this before any other deploy.**
+- **Git has changes the server doesn't:** undeployed work. Deploy it on purpose, or list it under Parked work below.
+
+**Known, expected differences (as of 2026-09-17). Don't treat these as drift:**
+- **Line endings only (CRLF on server, LF in git):** `app/Console/Commands/FetchApplicationLogs.php`, `resources/lang/english/content.php`, `resources/views/admin/analytics/{demand-supply,employees,expiring-jobs}.blade.php`, `resources/views/partials/breadcrumb-schema.blade.php`. `diff -w --strip-trailing-cr` shows no change. These clear up when the files are next deployed.
+- **Formatting only:** `app/Models/Job.php` (Pint formatting in git).
+- **Dev-only dependency:** `composer.json` / `composer.lock` (`laravel/boost` in git only). Don't upload these unless you also run `composer install` on the server.
+- **Local-only files:** `.claude/`, `CLAUDE.md`, `SETUP.md`, `docs/`, `.mcp.json`, `.gitignore`.
+- **Unused leftovers not on the server:** `.htaccess_production`, `laravel/verify-noindex-guards.sh`, `storage/ci3_*.html`, `resources/views/listings/partials/homepage-content.blade.php`.
+- **Server-only clutter:** about 30 `*.bak*` files and about 20 one-off scripts. The app doesn't load them. Left in place deliberately.
+
+## 5. Parked work: in git, NOT deployed. Don't deploy as-is
+
+| Work | Commit | State |
+|---|---|---|
+| Area slug migration (fix for substring LIKE bug, 175 unreachable areas) | `310cc5a` (2026-07-26) | `app/Console/Commands/PopulateAreaSlugs.php` and `database/migrations/2026_07_26_000000_add_slug_to_areas.php` were never uploaded. The migration has not run, and production `areas` has **no `slug` column**. Live code doesn't use it. Unfinished: review the plan before deploying. |
+
+When you finish or abandon parked work, update this table.
+
+## 6. Later: running the app locally
 
 Only needed to run the site locally. Deploying doesn't need any of this.
 
