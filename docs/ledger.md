@@ -4,6 +4,27 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-09-17 — Site unreachable (ERR_SSL_PROTOCOL_ERROR): SiteGround global CDN outage, not code
+
+**Symptom:** Browsers showed `ERR_SSL_PROTOCOL_ERROR` on nihonarubaito.com. Reported by two people in different cities, on different networks.
+
+**Cause (confirmed by SiteGround support):** A global, temporary SiteGround CDN issue. SiteGround fixed it on their side. No code, deploy, or certificate change was involved. The certificate was valid throughout (Let's Encrypt `*.nihonarubaito.com`, Aug 20 – Nov 18 2026).
+
+**Misdiagnosis to avoid:** The agent called it "local to the Mac". Its checks came back healthy, but only because they ran from the Mac, after recovery had started, and from the SiteGround server. On the Mac, the system resolver failed for the bare domain while `dig` worked; that was a symptom of the outage, not a local fault. **The SiteGround server can't tell you whether visitors can reach the site, because it is inside SiteGround's own network.** Never call an outage local until someone on a *different network* (for example a phone on mobile data, or a person elsewhere) has checked.
+
+**If it happens again:**
+1. **Scope:** test from a phone on mobile data and ask someone on another network. If it fails for more than one network, treat it as a hosting-layer outage. Don't touch the code.
+2. **Status:** check the SiteGround status page for an active CDN/network incident.
+3. **Certificate** (rules out an expiry):
+   ```bash
+   echo | openssl s_client -connect nihonarubaito.com:443 -servername nihonarubaito.com 2>/dev/null | openssl x509 -noout -dates
+   ```
+4. **Purge:** Site Tools → Speed → Caching → purge the cache (kicks the CDN edge). A cache purge is safe; don't reissue the SSL certificate unless step 3 shows it has expired.
+5. **Still failing:** open a SiteGround ticket. Say "multiple users, different cities/networks, certificate valid → CDN/DNS layer."
+6. **After recovery:** a machine may keep the cached failure. Run `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`, clear `chrome://net-internals/#dns`, or use incognito.
+
+---
+
 ## 2026-08-27 — Empty homepage cache poisoning: never cache 0-job renders
 
 **Symptom:** Homepage shows "No job found" on cookieless first load (Googlebot, private browsers, first-time visitors); refresh shows jobs. AdSense Auto Ads placed 0 in-page ads (scanned the empty page).
