@@ -4,6 +4,25 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-09-23 — Random 500s (~0.1% of requests): host returns an empty `.env`; fixed with a cached config
+
+**Symptom:** 21–46 HTTP 500s a day, scattered across job detail pages, area pages, `/jobs/search`, `/account` and admin POSTs. Random, never reproducible, a reload always worked. Long-standing, not caused by any deploy.
+
+**Diagnosis:** Every distinct 500 timestamp in the access log had an exception logged in the **same second** (30/30 on 2026-09-22). The exception was `Illuminate\Encryption\MissingAppKeyException`. Two other errors in the same log confirmed the cause: `Table 'sessions' doesn't exist` and `database.sqlite does not exist` — both are Laravel's **defaults**, the values used when `.env` isn't loaded. `.env` itself was intact, readable and unchanged since Jul 23.
+
+**Root cause:** Laravel read `.env` on every request, and on this shared host that read intermittently returned empty. The request then booted with framework defaults (no `APP_KEY`, sqlite, database sessions) and died. A hosting/filesystem fault, not a code bug.
+
+**Fix (2026-09-23 14:33 UTC):** `php artisan config:cache`. Config, including `APP_KEY`, now comes from `bootstrap/cache/config.php`, so requests no longer read `.env`. No code change. Verified safe first: **zero** `env()` calls outside `config/` (those return null once config is cached).
+
+**Deploy procedure this creates:** `.env` and `config/` changes now do nothing until `config:cache` is re-run. See SETUP.md section 2.
+
+**Lessons:**
+- **A cache rebuild can bake in the same failure.** `config:cache` reads `.env` once; if that read fails, broken defaults are served to 100% of requests instead of 0.1%. Verify `.env` reads clean before caching, and check the result immediately after, with `config:clear` ready.
+- **Verify a cache by reading the generated file with `php -r`, not through the app.** Asking `artisan`/`tinker` means asking the possibly-broken cache about itself.
+- **Not fully solved.** Cron jobs and `artisan` commands still read `.env` directly and can still hit the hiccup (a run fails, the next succeeds). The real fix is on SiteGround's side; reported to them.
+
+---
+
 ## 2026-09-17 — Site unreachable (ERR_SSL_PROTOCOL_ERROR): SiteGround global CDN outage, not code
 
 **Symptom:** Browsers showed `ERR_SSL_PROTOCOL_ERROR` on nihonarubaito.com. Reported by two people in different cities, on different networks.

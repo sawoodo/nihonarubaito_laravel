@@ -81,6 +81,27 @@ ssh nihonarubaito 'whoami'
    ssh nihonarubaito 'md5sum www/nihonarubaito.com/public_html/laravel/app/Http/Controllers/Foo.php'
    ```
    The hashes must match.
+6. **If you deployed anything under `config/`, or changed `.env` on the server, rebuild the config cache.** Otherwise the change has no effect at all:
+   ```bash
+   ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && php artisan config:cache'
+   ```
+   Then confirm it rebuilt correctly (see below). Route and view caches are **not** in use, so nothing else needs a rebuild.
+
+### Config cache: why it exists and the trap it creates
+
+Since 2026-09-23 production runs with a cached config (`bootstrap/cache/config.php`). It stops roughly 40 requests a day from returning HTTP 500 when the host's filesystem hands back an empty `.env` — see `docs/ledger.md`.
+
+**The trap: while the cache exists, `.env` and `config/` are ignored at runtime.** Edit either one and nothing changes until `php artisan config:cache` runs again.
+
+Rebuilding reads `.env` once. If that read hits the same filesystem hiccup, it bakes broken defaults in for *every* request, so always verify straight afterwards:
+
+```bash
+ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && php -r "\$c = require \"bootstrap/cache/config.php\"; echo \"key_len=\", strlen(\$c[\"app\"][\"key\"] ?? \"\"), \" db=\", \$c[\"database\"][\"default\"] ?? \"?\", \" session=\", \$c[\"session\"][\"driver\"] ?? \"?\", PHP_EOL;"'
+```
+
+Expected: `key_len=51 db=mysql session=file`. Anything else (empty key, `db=sqlite`) means the cache is broken — run `php artisan config:clear` at once to fall back to reading `.env`, then rebuild.
+
+Read the file with `php -r`, as above, rather than asking the app through `artisan`/`tinker`: a broken cache can still report itself as fine through the app.
 
 ## 3. Switching machines
 
