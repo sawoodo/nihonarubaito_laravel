@@ -19,7 +19,9 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 **Lessons:**
 - **A cache rebuild can bake in the same failure.** `config:cache` reads `.env` once; if that read fails, broken defaults are served to 100% of requests instead of 0.1%. Verify `.env` reads clean before caching, and check the result immediately after, with `config:clear` ready.
 - **Verify a cache by reading the generated file with `php -r`, not through the app.** Asking `artisan`/`tinker` means asking the possibly-broken cache about itself.
-- **Not fully solved.** Cron jobs and `artisan` commands still read `.env` directly and can still hit the hiccup (a run fails, the next succeeds). The real fix is on SiteGround's side; reported to them.
+- **Not fully solved.** Cron jobs and `artisan` commands still read `.env` directly and can still hit the hiccup (a run fails, the next succeeds). The real fix is on SiteGround's side.
+
+**SiteGround ticket:** #5141798, opened 2026-09-30, escalated to senior techs, awaiting their update — https://my.siteground.com/support/history. Evidence supplied: file intact and manual reads always succeed, but the app's read intermittently returns empty (a storage-layer read failure, not permissions). Reference timestamps: 30 correlated web failures on 2026-09-22; cron failures at 02:05–02:29 UTC on 2026-09-23.
 
 ---
 
