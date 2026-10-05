@@ -16,6 +16,31 @@ use Illuminate\Support\Facades\Log;
 class CreateJobFromXmlController extends Controller
 {
     /**
+     * Category-derived Japanese level, used only when the feed sends its default.
+     *
+     * The level number IS the JLPT number (5 = N5, easiest), per the admin dropdown
+     * in JobController::getFormDropdowns() and the `japanese_level_N` labels in
+     * each resources/lang language content file. Convenience Store is the hardest
+     * (N3) — register, payments and customer questions.
+     *
+     * @var array<int, int>
+     */
+    private const CATEGORY_JAPANESE_LEVEL = [
+        1 => 5, // Packing/Sorting      → N5
+        2 => 4, // Restaurant/Service   → N4
+        3 => 3, // Convenience Store    → N3
+        4 => 4, // Bed Making/Cleaning  → N4
+        5 => 4, // Delivery/logistics   → N4
+    ];
+
+    /**
+     * The level the feed sends for ~95% of jobs regardless of category, i.e. its
+     * default rather than a judgement. Any other value is treated as deliberate
+     * publisher input and kept untouched.
+     */
+    private const FEED_DEFAULT_JAPANESE_LEVEL = 3;
+
+    /**
      * Maps the translation prompt's short slugs to the SEO slugs stored in `tags`.
      * Slugs not listed here are looked up as-is.
      */
@@ -365,17 +390,26 @@ class CreateJobFromXmlController extends Controller
                 'title'         => mb_substr((string) ($xml->title ?? ''), 0, 80),
             ]);
         }
+        // Japanese level: the feed sends its default (3) for ~95% of jobs regardless
+        // of category, so derive the level from the category in that case only. Any
+        // other value is kept — it is likely deliberate publisher input.
+        $categoryId = (int) ($xml->job_category_id ?? 0);
+        $japaneseLevel = (int) ($xml->japanese_level ?? 0);
+        if ($japaneseLevel === self::FEED_DEFAULT_JAPANESE_LEVEL) {
+            $japaneseLevel = self::CATEGORY_JAPANESE_LEVEL[$categoryId] ?? $japaneseLevel;
+        }
+
         return [
             'job_no'               => '',
             'title'                => (string) ($xml->title ?? ''),
             'company_name'         => (string) ($xml->company ?? ''),
             'description'          => $description,
-            'job_category_id'      => (int) ($xml->job_category_id ?? 0),
+            'job_category_id'      => $categoryId,
             'prefecture_id'        => (int) ($xml->prefecture_id ?? 0),
             'area_id'              => $xmlAreaId,
             'station'              => $station,
             'address'              => (string) ($xml->address ?? ''),
-            'japanese_level'       => (int) ($xml->japanese_level ?? 0),
+            'japanese_level'       => $japaneseLevel,
             'working_hours'        => (string) ($xml->working_hours ?? ''),
             'working_days'         => (string) ($xml->working_days ?? ''),
             'wage'                 => $wage,
