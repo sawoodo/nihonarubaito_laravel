@@ -38,6 +38,7 @@ return [
     'trans_exp_label'               => 'Hỗ trợ đi lại',
     'company_name_label'            => 'Tên công ty',
     'requirement_label'             => 'Yêu cầu',
+    'benefits_label'                => 'Phúc lợi',
     'btn_how_to_fill_form_label'    => 'Xem hướng dẫn điền Đăng ký',
     'btn_apply_label'               => 'Nộp hồ sơ trực tuyến',
 

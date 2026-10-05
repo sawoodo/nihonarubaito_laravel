@@ -205,7 +205,7 @@
 
                                             @if ($job->benefits)
                                                 <div class="row tw-mt-8">
-                                                    <div class="col-md-4 text-left">Benifits:</div>
+                                                    <div class="col-md-4 text-left">{{ $content->benefits_label }}:</div>
                                                     <div class="col-md-8 text-left">
                                                         <small>{!! $job->benefits !!}</small>
                                                     </div>

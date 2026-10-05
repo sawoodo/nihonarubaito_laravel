@@ -38,6 +38,7 @@ return [
     'trans_exp_label'               => 'こうつうしゅだん',
     'company_name_label'            => 'かいしゃめい',
     'requirement_label'             => 'じょうけん',
+    'benefits_label'                => 'てあて・ふくり',
     'btn_how_to_fill_form_label'    => 'How to Fill Form?',
     'btn_apply_label'               => 'オンラインもうしこむ',
 

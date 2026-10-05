@@ -37,6 +37,7 @@ return [
     'trans_exp_label'               => 'Transportation',
     'company_name_label'            => 'Company Name',
     'requirement_label'             => 'Requirement',
+    'benefits_label'                => 'Benefits',
     'btn_how_to_fill_form_label'    => 'Please see How to Fill Form',
     'btn_apply_label'               => 'Apply Now',
 
