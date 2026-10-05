@@ -38,11 +38,6 @@ return [
     'company_name_label'            => 'Company Name',
     'requirement_label'             => 'Requirement',
     'benefits_label'                => 'Benefits',
-    'japanese_level_1'              => 'Native Level Japanese (N1)',
-    'japanese_level_2'              => 'Business Japanese (N2)',
-    'japanese_level_3'              => 'Conversational Japanese (N3)',
-    'japanese_level_4'              => 'Basic Conversational Japanese (N4)',
-    'japanese_level_5'              => 'Beginner Japanese (N5)',
     'btn_how_to_fill_form_label'    => 'Please see How to Fill Form',
     'btn_apply_label'               => 'Apply Now',
 

@@ -149,8 +149,23 @@
                                                     @php $language = $user_lang_name @endphp
 
                                                     <small>
-                                                        @php $jpLevelKey = 'japanese_level_' . (int) $job->japanese_level; @endphp
-                                                        {{ $content->{$jpLevelKey} ?? '' }}
+                                                        @if ($job->japanese_level == 5 && $language == "vietnamese")
+                                                            Giao ti&#7871;p c&#417; b&#7843;n, c&#243; th&#7875; gi&#7899;i thi&#7879;u b&#7843;n th&#226;n (T&#432;&#417;ng &#273;&#432;&#417;ng N5)
+                                                        @elseif ($job->japanese_level == 5 && $language == "english")
+                                                            Basic Conversational Japanese
+                                                        @elseif ($job->japanese_level == 4 && $language == "vietnamese")
+                                                            Giao ti&#7871;p c&#417; b&#7843;n, c&#243; th&#7875; gi&#7899;i thi&#7879;u b&#7843;n th&#226;n (T&#432;&#417;ng &#273;&#432;&#417;ng N4)
+                                                        @elseif ($job->japanese_level == 4 && $language == "english")
+                                                            Basic Conversational Japanese
+                                                        @elseif ($job->japanese_level == 3 && $language == "vietnamese")
+                                                            H&#7897;i tho&#7841;i th&#244;ng th&#432;&#7901;ng (T&#432;&#417;ng &#273;&#432;&#417;ng N3)
+                                                        @elseif ($job->japanese_level == 3 && $language == "english")
+                                                            Daily Conversational Japanese
+                                                        @elseif ($job->japanese_level == 2 && $language == "vietnamese")
+                                                            Ti&#7871;ng Nh&#7853;t th&#432;&#417;ng m&#7841;i (t&#432;&#417;ng &#273;&#432;&#417;ng N2)
+                                                        @elseif ($job->japanese_level == 2 && $language == "english")
+                                                            Business Conversational Japanese
+                                                        @endif
                                                     </small>
                                                 </div>
                                             </div>
