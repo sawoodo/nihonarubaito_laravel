@@ -39,6 +39,11 @@ return [
     'company_name_label'            => 'Tên công ty',
     'requirement_label'             => 'Yêu cầu',
     'benefits_label'                => 'Phúc lợi',
+    'japanese_level_1'              => 'Tiếng Nhật trình độ bản ngữ (N1)',
+    'japanese_level_2'              => 'Tiếng Nhật thương mại (tương đương N2)',
+    'japanese_level_3'              => 'Hội thoại thông thường (tương đương N3)',
+    'japanese_level_4'              => 'Giao tiếp cơ bản, có thể giới thiệu bản thân (tương đương N4)',
+    'japanese_level_5'              => 'Giao tiếp cơ bản, có thể giới thiệu bản thân (tương đương N5)',
     'btn_how_to_fill_form_label'    => 'Xem hướng dẫn điền Đăng ký',
     'btn_apply_label'               => 'Nộp hồ sơ trực tuyến',
 

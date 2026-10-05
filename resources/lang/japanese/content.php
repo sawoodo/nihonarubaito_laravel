@@ -39,6 +39,11 @@ return [
     'company_name_label'            => 'かいしゃめい',
     'requirement_label'             => 'じょうけん',
     'benefits_label'                => 'てあて・ふくり',
+    'japanese_level_1'              => 'ネイティブレベル (N1)',
+    'japanese_level_2'              => 'ビジネスにほんご (N2)',
+    'japanese_level_3'              => 'にちじょうかいわ (N3)',
+    'japanese_level_4'              => 'かんたんなかいわ (N4)',
+    'japanese_level_5'              => 'にほんご しょきゅう (N5)',
     'btn_how_to_fill_form_label'    => 'How to Fill Form?',
     'btn_apply_label'               => 'オンラインもうしこむ',
 
