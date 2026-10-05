@@ -4,6 +4,24 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-05 — Japanese-level work rolled back (parked until after ~Oct 8)
+
+Both Japanese-level changes were reverted the same day they shipped; **the "Benifits" typo fix (`8415e4e`) is retained**.
+
+- `51716b4` — display labels: JLPT levels added, N4/N5 collapse fixed, blank level 1 filled. Reverted by `53f374a`.
+- `06c606c` — XML import derived `japanese_level` from `job_category_id` when the feed sent its default (3). Reverted by `964b518`.
+
+**Reason:** parked deliberately, not because anything failed. Redo the whole thing in one pass once the spam-update rollout settles (~Oct 8): labels + new-job assignment + an optional bulk fix of existing rows.
+
+**Worth keeping from the investigation:**
+- **Level number = JLPT number** (5 = N5, easiest). Confirmed in two places: the admin dropdown in `JobController::getFormDropdowns()` and the front-end labels. Convenience Store at N3 is deliberately the hardest of the five.
+- **The feed's `japanese_level` is a near-constant 3**: 2,292 of 2,417 imports (94.8%) in the 30 days to Oct 5, regardless of category. It carries no category signal. The ~125/month at 2/4/5 may be real publisher input, which is why the chosen rule overrode *only* the value 3.
+- **Agreed map:** 1 Packing→5, 2 Restaurant→4, 3 Konbini→3, 4 Bed Making→4, 5 Delivery→4; unmapped categories keep the feed value.
+- **Existing rows were never touched.** A retroactive update would hit ~3,358 published rows (Packing 848, Restaurant 1,700, Bed Making 803, Delivery 7).
+- **Watch when redoing:** `*/` inside a docblock path like `lang/*/content.php` closes the comment and breaks the file.
+
+---
+
 ## 2026-09-23 — Random 500s (~0.1% of requests): host returns an empty `.env`; fixed with a cached config
 
 **Symptom:** 21–46 HTTP 500s a day, scattered across job detail pages, area pages, `/jobs/search`, `/account` and admin POSTs. Random, never reproducible, a reload always worked. Long-standing, not caused by any deploy.
