@@ -239,7 +239,9 @@ class Job extends Model
             ->from('jobs as j')
             ->leftJoin('categories as jc', 'j.job_category_id', '=', 'jc.id')
             ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
-            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            // LEFT join: an unresolved prefecture_id (0 from the XML feed) must not
+            // hide the job from the admin list — 211 pending jobs were invisible.
+            ->leftJoin('prefectures as p', 'j.prefecture_id', '=', 'p.id')
             ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
             ->join('users as created', 'j.user_id', '=', 'created.id')
             ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
@@ -277,9 +279,12 @@ class Job extends Model
             \DB::raw("CONCAT(updated.first_name, ' ', updated.last_name) AS updated_by_name"),
         ])
             ->from('jobs as j')
-            ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            // LEFT joins: unresolved job_category_id (221 jobs) or prefecture_id
+            // (216 jobs) must not hide the job from admin search. job_status and
+            // users stay INNER — zero orphans, verified on production 2026-10-12.
+            ->leftJoin('categories as jc', 'j.job_category_id', '=', 'jc.id')
             ->join('job_status as js', 'j.job_status_id', '=', 'js.id')
-            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            ->leftJoin('prefectures as p', 'j.prefecture_id', '=', 'p.id')
             ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
             ->join('users as created', 'j.user_id', '=', 'created.id')
             ->leftJoin('users as updated', 'j.updated_by', '=', 'updated.id')
