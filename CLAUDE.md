@@ -53,14 +53,12 @@ ValueCommerce affiliate (job apply clicks).
 - Duplicate content prevention at job creation (3 confidence levels)
 - JobPosting baseSalary parser (Jul 2026): string→numeric, ranges via minValue/maxValue,
   unit detection (HOUR/DAY/MONTH), safe-omit on unparseable. Shared static helper
-  Job::parseBaseSalaryLd() used by ListingController::buildStructuredData() AND
-  JobController::createSchema(). Validated on all 991 distinct wages: 945 parse (95.4%),
-  46 omit (4.6%), 0 false positives. Fixed prior bug where detail page emitted
-  concatenated garbage (e.g. "1600円～2000円" → 16002000) on ~78% of jobs.
-  DO NOT convert listing inline JobPosting/ItemList to url-only ListItems — that
-  pattern earns the Job listing rich result; fix only fields inside it.
-  VALIDATED by Google Rich Results Test (Jul 7 2026): 31 valid items, 30 Job Postings,
-  0 errors (only optional postalCode warning). baseSalary renders numeric. Task closed.
+  Job::parseBaseSalaryLd() used by JobController::createSchema(). Validated on all
+  991 distinct wages: 945 parse (95.4%), 46 omit (4.6%), 0 false positives. Fixed
+  prior bug where detail page emitted concatenated garbage (e.g. "1600円～2000円" →
+  16002000) on ~78% of jobs. baseSalary renders numeric.
+  Listing pages carry NO JobPosting markup (Google policy: single-job pages only).
+  JobPosting lives only on job detail pages via createSchema(). Decided 2026-10-12.
 
 ## Performance Fixes
 - Removed 70KB areas JSON from every page (FrontendComposer)

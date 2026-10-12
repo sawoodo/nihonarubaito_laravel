@@ -435,8 +435,8 @@ class ListingController extends Controller
         $introParagraph .= $popularLocations ? " such as {$popularLocations}." : '.';
         $introParagraph .= ' Apply today and start earning!';
 
-        // Structured data (JSON-LD)
-        $structuredData = $this->buildStructuredData($jobs, $title, $ogDescription);
+        // Structured data (JSON-LD) — WebPage only; no JobPosting on listing pages
+        $structuredData = $this->buildStructuredData($title, $ogDescription);
 
         // Breadcrumb
         $breadcrumbData = $this->buildBreadcrumb($prefectures, $prefectureId, $areaId, $area, $query, $uri, $langName);
@@ -858,57 +858,15 @@ class ListingController extends Controller
     }
 
     /**
-     * Build JSON-LD WebPage structured data (replicates CI3 structured_data).
+     * Build JSON-LD WebPage structured data for listing pages.
+     *
+     * Deliberately carries NO JobPosting markup: Google's job posting guidelines
+     * allow it only on pages that contain a single job posting, never on pages
+     * that present a list of jobs. JobPosting lives solely on the job detail
+     * page, built by JobController::createSchema(). Decided 2026-10-12.
      */
-    private function buildStructuredData($jobs, string $pageHeading, string $pageDescription): string
+    private function buildStructuredData(string $pageHeading, string $pageDescription): string
     {
-        $jobPostings = [];
-
-        foreach ($jobs as $job) {
-            // Parse baseSalary using static helper (works on stdClass from joins)
-            $baseSalaryValue = Job::parseBaseSalaryLd($job->wage);
-
-            $address = [
-                '@type' => 'PostalAddress',
-                'streetAddress' => htmlspecialchars($job->address ?? ''),
-                'addressLocality' => htmlspecialchars($job->area_name ?? ''),
-                'addressRegion' => $job->prefecture_name ? htmlspecialchars($job->prefecture_name) : 'Japan',
-                'addressCountry' => 'JP',
-            ];
-            if (! empty($job->area_postal_code)) {
-                $address['postalCode'] = $job->area_postal_code;
-            }
-
-            $jobPosting = [
-                '@type' => 'JobPosting',
-                'title' => htmlspecialchars($job->title),
-                'description' => htmlspecialchars(substr(strip_tags($job->description), 0, 160)),
-                'employmentType' => 'PART_TIME',
-                'datePosted' => $job->updated_at ? date('Y-m-d', strtotime($job->updated_at)) : '',
-                'validThrough' => $job->updated_at ? date('Y-m-d', strtotime('+30 days', strtotime($job->updated_at))) : '',
-                'hiringOrganization' => [
-                    '@type' => 'Organization',
-                    'name' => 'Nihon Arubaito',
-                    'sameAs' => url('/'),
-                ],
-                'jobLocation' => [
-                    '@type' => 'Place',
-                    'address' => $address,
-                ],
-            ];
-
-            // Add baseSalary only if parseable (absent is valid; malformed is penalized)
-            if ($baseSalaryValue) {
-                $jobPosting['baseSalary'] = [
-                    '@type' => 'MonetaryAmount',
-                    'currency' => 'JPY',
-                    'value' => $baseSalaryValue,
-                ];
-            }
-
-            $jobPostings[] = $jobPosting;
-        }
-
         return json_encode([
             '@context' => 'https://schema.org/',
             '@type' => 'WebPage',
@@ -922,10 +880,6 @@ class ListingController extends Controller
                     '@type' => 'ImageObject',
                     'url' => url('frontend/images/logo.webp'),
                 ],
-            ],
-            'mainEntity' => [
-                '@type' => 'ItemList',
-                'itemListElement' => $jobPostings,
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
