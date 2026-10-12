@@ -320,7 +320,9 @@ class Job extends Model
         ])
             ->from('jobs as j')
             ->join('languages as l', 'j.lang_id', '=', 'l.id')
-            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            // LEFT join: prefecture_id=0 (unresolved XML prefecture) must not hide
+            // the job from the edit form — that produced a false "Job not found."
+            ->leftJoin('prefectures as p', 'j.prefecture_id', '=', 'p.id')
             ->leftJoin('images as img', 'j.img_id', '=', 'img.id')
             ->where('j.job_no', $jobNo);
     }
@@ -341,8 +343,9 @@ class Job extends Model
         ])
             ->from('jobs as j')
             ->leftJoin('languages as l', 'j.lang_id', '=', 'l.id')
-            ->join('categories as jc', 'j.job_category_id', '=', 'jc.id')
-            ->join('prefectures as p', 'j.prefecture_id', '=', 'p.id')
+            // LEFT joins for the same reason as scopeForEdit
+            ->leftJoin('categories as jc', 'j.job_category_id', '=', 'jc.id')
+            ->leftJoin('prefectures as p', 'j.prefecture_id', '=', 'p.id')
             ->leftJoin('areas as a', 'j.area_id', '=', 'a.id')
             ->leftJoin('wage_types as wt', 'j.wage_type_id', '=', 'wt.id')
             ->leftJoin('trans_exp_payments as tep', 'j.trans_exp_id', '=', 'tep.id')

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Image;
 use App\Models\Job;
 use App\Models\Language;
+use App\Models\Prefecture;
 use App\Models\User;
 use App\Models\Area;
 use App\Services\JobDeduplicator;
@@ -146,8 +147,19 @@ class CreateJobFromXmlController extends Controller
             $job->update(['job_no' => (string) $job->id]);
             $this->attachTagsFromXml($xml, $job->id);
 
-            return redirect("/admin/jobs/{$job->job_no}/edit")
+            $redirect = redirect("/admin/jobs/{$job->job_no}/edit")
                 ->with('success', 'Job has been successfully created from XML.');
+
+            // Unresolved prefecture: the job is saved but cannot be published until a
+            // prefecture and area are set. Tell the user, with the raw XML value.
+            if ((int) $jobData['prefecture_id'] <= 0
+                || ! Prefecture::whereKey((int) $jobData['prefecture_id'])->exists()) {
+                $rawPrefecture = trim((string) ($xml->prefecture_id ?? ''));
+                $shown = $rawPrefecture === '' ? '(empty)' : $rawPrefecture;
+                $redirect->with('error', "Prefecture '{$shown}' not recognised — job saved as pending; set prefecture and area before publishing.");
+            }
+
+            return $redirect;
         }
 
         // GET - show form
@@ -363,6 +375,24 @@ class CreateJobFromXmlController extends Controller
                 'prefecture_id' => (int) ($xml->prefecture_id ?? 0),
                 'address'       => (string) ($xml->address ?? ''),
                 'title'         => mb_substr((string) ($xml->title ?? ''), 0, 80),
+            ]);
+        }
+
+        // Validate prefecture_id resolves — an unresolved prefecture used to make the
+        // job unopenable in admin (inner join in scopeForEdit). The join is now LEFT,
+        // so the job opens; this surfaces the bad feed value. create() also warns the
+        // user on screen with the raw value.
+        $rawPrefecture = trim((string) ($xml->prefecture_id ?? ''));
+        $xmlPrefectureId = (int) ($xml->prefecture_id ?? 0);
+        if ($xmlPrefectureId <= 0 || ! Prefecture::whereKey($xmlPrefectureId)->exists()) {
+            // Log::error, not warning: production runs LOG_LEVEL=error, so a warning
+            // would never be written and we would never collect the failing values.
+            Log::error('XML import: unresolvable prefecture_id', [
+                'raw_prefecture' => $rawPrefecture,
+                'prefecture_id'  => $xmlPrefectureId,
+                'area_id'        => (int) ($xml->area_id ?? 0),
+                'address'        => (string) ($xml->address ?? ''),
+                'title'          => mb_substr((string) ($xml->title ?? ''), 0, 80),
             ]);
         }
         return [
