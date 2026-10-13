@@ -4,6 +4,33 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-13 — `laravel.log` was world-readable (16 MB); `laravel/` has no `.htaccess` of its own
+
+**Found by `/security-check`.** `https://nihonarubaito.com/laravel/storage/logs/laravel.log` returned **200, 16,220,159 bytes** to a normal browser UA. `laravel/artisan` also returned 200 (350 B, served as text — no `.php` extension). `config/database.php` and `routes/web.php` returned **500**: PHP under `laravel/` is *executed*, not denied.
+
+**No credential values leaked.** 0 hits for `DB_PASSWORD` / `DB_USERNAME` / `MAIL_PASSWORD` / `APP_KEY=` / `Bearer` / `token`. What was exposed: the DB name (226 hits), the MySQL user and host via *"Access denied for user '…'@'…' (using password: NO)"*, absolute paths including the account name, framework versions, full stack traces, session ids inside SQL. Not linked from `robots.txt` or the sitemap. Decision: **no credential rotation** (SiteGround MySQL accepts local connections only).
+
+**Root cause: there is no `public_html/laravel/.htaccess`.** `.env`, `composer.json`, `.git/config` and `bootstrap/cache/config.php` return 403 only because **SiteGround's WAF** blocks those filenames — not because of anything in this repo. Files the WAF doesn't recognise (a `.log`) were served.
+
+**Fix applied (step 1 + 2):**
+1. The 16 MB log moved out of the web root to `~/log-archive/laravel-2026-10-13.log.gz`; Laravel recreated an empty `storage/logs/laravel.log` (same owner, 644).
+2. `public_html/laravel/storage/.htaccess` = `Require all denied`. Verified active with a discriminator: a **nonexistent** file under `storage/` returns **403**, while one outside returns **404** — so the rule is ours, not the WAF's. Safe because nothing is served from `storage/` by URL: `laravel/public/storage` does not exist, `storage/app/public` is empty, job images live in `public_html/images` and `public_html/frontend/images`, and the sitemap is read from disk by `SitemapController`.
+3. Unaffected after the change: homepage, `/sitemap.xml`, job detail, images, `/admin/login` — all 200.
+
+**Still open:**
+- **nginx serves some static extensions directly, bypassing `.htaccess`.** `/laravel/storage/app/sitemap.xml` still returns 200 *with the deny in place*, while `.log`, `.txt` and `.gitignore` under the same directory return 403. So an `.htaccess` deny cannot protect static files of nginx-handled types; those must be moved out of the web root or blocked at nginx level by SiteGround.
+- A full `laravel/.htaccess` deny is **planned, not applied** (step 3).
+- `LOG_CHANNEL=single` means one file grows without bound. Switching to `daily` with ~14 days retention is an `.env` change, so it needs `config:cache` afterwards.
+
+**Instrument lessons:**
+- **The CDN keeps serving a deleted file.** After the move, a cache-busted request returned 97 bytes but a **normal request still returned the full 16 MB** for at least 2 minutes. Fixing the origin does not end an exposure — the dynamic cache must be purged.
+- **A 403 can be the WAF's challenge page, not your protection.** It is exactly 75,193 bytes and identical for every path. A run where *all* paths 403 — homepage included — is a WAF block, not a pass. The Windows-Chrome UA tripped it; the Mac-Chrome UA did not. Control with the homepage before *and* after every sweep.
+- **Prove a deny with a nonexistent path**: 403 means the rule applies, 404 means it does not.
+- `grep -c pattern file` returns 0 on the Mac even when matches exist — count markers with Python.
+- `git grep` over `git rev-list --all` found nothing for a string known to be in history; use `git cat-file --batch-all-objects` instead.
+
+---
+
 ## 2026-10-05 — Japanese-level work rolled back (parked until after ~Oct 8)
 
 Both Japanese-level changes were reverted the same day they shipped; **the "Benifits" typo fix (`8415e4e`) is retained**.
