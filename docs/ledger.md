@@ -4,6 +4,42 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-13 — `/blog` WordPress install removed (it was the source of the credential exposure)
+
+**Why.** The `/security-check` sweep found two full-site backups downloadable at the web root: `public_html_2_9_2026.zip` (245 MB, 10,134 files) and `public_html.zip` (124 MB). The first was confirmed downloadable (HTTP 206 + `PK\x03\x04`); the second returned 403 only because the WAF happens to match that filename. **9,231 of the 10,134 entries were `blog/`**, and both archives contained `blog/wp-config.php` **byte-identical to the live file** — the WordPress DB password and all 8 auth keys/salts. **Neither archive contained `laravel/` (0 entries), so no Laravel credential was exposed.**
+
+**Blast radius: no evidence of download.** 0 requests for either filename across all 30 days of retained logs (13/Sep–13/Oct). The files were dated Feb 8–9, so ~8 months of exposure is unobservable; treated as compromised anyway.
+
+**The blog was already dead and unused:**
+- WordPress could not connect to its database (`wp-cli` → "Error establishing a database connection"), on a **different database and user** from Laravel's.
+- `/blog/` received **3 requests in 30 days, all bots, 0 humans** (vs 1,000,946 non-bot requests to the rest of the site). Its only content was Kadence starter-template demo posts.
+- It accounted for 209 of the 249 sensitive-extension files under the web root, and hosted `sg-cachepress`.
+- A `blog/.htaccess` dated 2026-03-14 shows it was already decommissioned then, with redirects bolted on inside the folder.
+
+**Compromise check before removal — clean.** 0 PHP files anywhere under `wp-content/uploads/`; all 67 PHP files modified in 60 days accounted for (38 compiled Blade views, the rest our own deploys plus the known stray loose copies from the September drift audit); no admin accounts enumerable because the DB was already unreachable.
+
+**Done:** both zips and `blog/.htaccess.bak` moved to `~/site-archives/`; `blog/` archived to `~/site-archives/blog-2026-10-13.tar.gz` (68.8 MB, 9,231 entries, `wp-config.php` verified present) and deleted — **171 MB reclaimed**. DB identifiers captured to `~/wpdbnames.txt` for manual deletion in Site Tools. Rotation of the WP secrets became unnecessary once the install and its DB user were removed.
+
+**Redirects: the old rules lived inside the folder.** `blog/.htaccess` held the catch-all *and* the `-jobs-in-` category mapping; only the prefecture rule and `^blog/?$` existed in `public_html/.htaccess`. A naive `^blog(/.*)?$ / [R=301,L]` would have sent `/blog/convenience-store-jobs-in-japan` to the homepage instead of its live page. Replacement, now at the **top** of `public_html/.htaccess`:
+
+```apache
+RewriteRule ^blog/part-time-jobs-in-([^/]+)/?$ /part-time-jobs-in-$1 [R=301,L]
+RewriteRule ^blog/(.+-jobs-in-[^/]+)/?$ /$1 [R=301,L]
+RewriteRule ^blog(/.*)?$ / [R=301,L]
+```
+
+**Two ordering lessons, both found by testing:**
+1. **Placement above the trailing-slash stripper matters.** With the rules at line 111, `/blog/` went 301 → `/blog` → 301 → `/` because the global stripper at lines 2–3 fires first. Moving them above it restored single-hop.
+2. **`(.+)/?$` captures the trailing slash.** `/blog/part-time-jobs-in-tokyo/` became `/part-time-jobs-in-tokyo/` → another 301. Fixed with `([^/]+)/?$`.
+
+Verified single-hop: `/blog`, `/blog/`, `/blog/part-time-jobs-in-tokyo(/)`, `/blog/convenience-store-jobs-in-japan(/)`, `/blog/wp-login.php`, `/blog/designing-runway-looks/`, `/blog/wp-content/uploads/x.jpg`. Unchanged: homepage, `/sitemap.xml`, job detail, `/admin/login`, prefecture pages, `/part-time-jobs-in-tokyo/page/2`, and `/faq/` (stripper still works).
+
+**Note:** `public_html/.htaccess` is **outside the git repo** (the repo root is `laravel/`). A snapshot is committed at `docs/server/public_html.htaccess` — it is a copy, not the live file; edits there do nothing until deployed.
+
+**Open:** `/blog-posts-sitemap.xml` and `/blog-categories-sitemap.xml` return **404 and did so before this change**. They are not Laravel routes and are referenced nowhere in `robots.txt` (which lists only `/sitemap.xml`) or in the generated sitemap (which is a flat `<urlset>`, not an index). Yet they drew **46 of 49 `/blog`-ish requests in 30 days** — almost certainly still submitted in Search Console. Remove them there.
+
+---
+
 ## 2026-10-13 — `laravel.log` was world-readable (16 MB); `laravel/` has no `.htaccess` of its own
 
 **Found by `/security-check`.** `https://nihonarubaito.com/laravel/storage/logs/laravel.log` returned **200, 16,220,159 bytes** to a normal browser UA. `laravel/artisan` also returned 200 (350 B, served as text — no `.php` extension). `config/database.php` and `routes/web.php` returned **500**: PHP under `laravel/` is *executed*, not denied.

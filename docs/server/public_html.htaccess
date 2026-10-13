@@ -1,0 +1,189 @@
+RewriteEngine On
+
+# Blog URLs -> live pages. WordPress removed 2026-10-13; replaces blog/.htaccess.
+# Placed above the trailing-slash stripper so /blog/ is a single 301 hop.
+RewriteRule ^blog/part-time-jobs-in-([^/]+)/?$ /part-time-jobs-in-$1 [R=301,L]
+RewriteRule ^blog/(.+-jobs-in-[^/]+)/?$ /$1 [R=301,L]
+RewriteRule ^blog(/.*)?$ / [R=301,L]
+RewriteCond %{REQUEST_URI} (.+)/$
+RewriteRule ^ %1 [R=301,L]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1) Enable rewriting
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteEngine On
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) FORCE HTTPS: any request not already on HTTPS jumps to the HTTPS URL
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.5) SECURITY HEADERS
+# ─────────────────────────────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' *.google-analytics.com *.googletagmanager.com *.googlesyndication.com *.googleadservices.com *.facebook.net *.facebook.com connect.facebook.net *.amazon-adsystem.com *.valuecommerce.com *.valuecommerce.ne.jp pagead2.googlesyndication.com tpc.googlesyndication.com *.gstatic.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' data: fonts.gstatic.com; frame-src 'self' *.google.com *.doubleclick.net tpc.googlesyndication.com *.facebook.com; connect-src 'self' *.google-analytics.com *.analytics.google.com *.googletagmanager.com *.facebook.com *.valuecommerce.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self';"
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3) FACEBOOK CRAWLER MANAGEMENT - Allow but with rate limiting
+# ─────────────────────────────────────────────────────────────────────────────
+# Identify Facebook crawler
+SetEnvIf User-Agent "facebookexternalhit" facebook_bot
+SetEnvIf User-Agent "Facebot" facebook_bot
+SetEnvIf User-Agent "facebookcatalog" facebook_bot
+
+# Apply rate limiting to Facebook crawler
+<IfModule mod_ratelimit.c>
+    <If "%{ENV:facebook_bot} == '1'">
+        SetOutputFilter RATE_LIMIT
+        SetEnv rate-limit 400
+    </If>
+</IfModule>
+
+# Cache Facebook crawler responses for 30 days
+<IfModule mod_headers.c>
+    <If "%{ENV:facebook_bot} == '1'">
+        Header set Cache-Control "public, max-age=2592000, immutable"
+        Header set X-Robots-Tag "noindex, nofollow"
+    </If>
+</IfModule>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4) BLOCK AGGRESSIVE/MALICIOUS CRAWLERS
+# ─────────────────────────────────────────────────────────────────────────────
+# Block Buck - Facebook internal tool that was hitting too hard
+RewriteCond %{HTTP_USER_AGENT} Buck/2.3.2 [NC]
+RewriteRule .* - [F,L]
+
+# Block ghost-rider referrer spam
+RewriteCond %{HTTP_REFERER} ghost-rider [NC]
+RewriteRule ^ - [F]
+
+# Block other bad user agents
+SetEnvIfNoCase User-Agent "curl" BADUA=1
+SetEnvIfNoCase User-Agent "wget" BADUA=1
+SetEnvIfNoCase User-Agent "python-requests" BADUA=1
+SetEnvIfNoCase User-Agent "libwww" BADUA=1
+SetEnvIfNoCase User-Agent "MJ12bot" BADUA=1
+SetEnvIfNoCase User-Agent "SemrushBot" BADUA=1
+SetEnvIfNoCase User-Agent "AhrefsBot" BADUA=1
+
+<RequireAll>
+    Require all granted
+    Require not env BADUA
+</RequireAll>
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CI3 LEGACY URL REDIRECTS (301)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Homepage variants
+RewriteRule ^home/?$ / [R=301,L]
+RewriteRule ^home/index/?$ / [R=301,L]
+
+# CI3 jobs listing
+RewriteRule ^jobs/index/?$ /jobs [R=301,L]
+
+# CI3 job_by_slug controller
+RewriteRule ^job_by_slug/(.+)$ /$1 [R=301,L]
+
+# CI3 with index.php prefix
+RewriteCond %{THE_REQUEST} /index\.php
+RewriteRule ^index\.php/(.*)$ /$1 [R=301,L]
+
+# Language-prefixed URLs
+RewriteRule ^en/jobs/?(.*)$ /jobs/$1 [R=301,L]
+RewriteRule ^ja/jobs/?(.*)$ /jobs/$1 [R=301,L]
+RewriteRule ^vi/jobs/?(.*)$ /jobs/$1 [R=301,L]
+RewriteRule ^en/?$ / [R=301,L]
+RewriteRule ^ja/?$ / [R=301,L]
+RewriteRule ^vi/?$ / [R=301,L]
+
+# Category by ID → category slug
+RewriteRule ^category/1/?$ /convenience-store-jobs-in-japan [R=301,L]
+RewriteRule ^category/2/?$ /restaurant-jobs-in-japan [R=301,L]
+RewriteRule ^category/3/?$ /sorting-jobs-in-japan [R=301,L]
+RewriteRule ^category/4/?$ /bed-making-jobs-in-japan [R=301,L]
+RewriteRule ^category/5/?$ /dish-washing-jobs-in-japan [R=301,L]
+
+
+# Help/FAQ pages
+RewriteRule ^help/?$ /faq [R=301,L]
+RewriteRule ^help/how-to-fill-form/?$ /faq [R=301,L]
+
+# Apply success → homepage
+RewriteRule ^job/applied/success/?$ / [R=301,L]
+RewriteRule ^job/applied/?$ / [R=301,L]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration cleanup 2026-07: leaked /laravel/public/index.php/* URLs
+# Handled in Laravel middleware (RedirectLeakedPaths) — cannot use .htaccess
+# due to PATH_INFO execution order (PHP runs before mod_rewrite for existing files)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ── LARAVEL CUTOVER ──
+# Root URL needs special handling (public_html/ is a directory, so !-d fails)
+RewriteRule ^$ /laravel/public/index.php [L]
+# To rollback: comment out or remove this block
+# ─────────────────────────────────────────────────────────────────────────────
+RewriteCond %{REQUEST_URI} !^/laravel/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /laravel/public/index.php [L]
+# ── END LARAVEL CUTOVER ──
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6) PHP handler
+# ─────────────────────────────────────────────────────────────────────────────
+AddHandler application/x-httpd-php82 .php .php5 .php4 .php3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7) Prevent caching of critical files
+# ─────────────────────────────────────────────────────────────────────────────
+<Files "robots.txt">
+    Header set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+    Header set X-SG-Exclude-Cache "1"
+</Files>
+
+<FilesMatch "sitemap\.xml$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+    Header set X-SG-Exclude-Cache "1"
+    Header unset ETag
+    FileETag None
+</FilesMatch>
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8) Static asset caching (1 year for versioned assets)
+# ─────────────────────────────────────────────────────────────────────────────
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 year"
+    ExpiresByType application/javascript "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|webp|jpg|jpeg|png|gif|woff2|woff|svg|ico)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>
+
