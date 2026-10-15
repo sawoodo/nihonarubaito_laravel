@@ -2,6 +2,10 @@
 #
 # verify-noindex-guards.sh — truth table for noindex logic
 #
+# WHERE TO RUN: any machine with curl, or on the server — it only fetches the live
+# site over HTTPS and reads no local or server files. (On the Mac the bare domain
+# sometimes fails to resolve; if so, add --resolve nihonarubaito.com:443:<ip>.)
+#
 # RUN AFTER: deploy + SiteGround cache purge
 #
 # Expected results:
