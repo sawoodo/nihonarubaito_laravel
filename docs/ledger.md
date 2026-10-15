@@ -4,6 +4,50 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-14 — Lighthouse flood #4 (149,596 req): the trigger is Ahrefs Site Audit, not /blog
+
+**Event.** 200,029 requests on Oct 14 vs 40,558 on Oct 13. 149,596 (75%) were
+`Chrome-Lighthouse` from 96 forward-confirmed `google-proxy-*.google.com` IPs
+(`64.233.172.x`, `192.178.10.x`), 09:31:30–12:46:54 UTC, peak 982 req/min at 09:52.
+22,420 carried the internal Google referer `http://ghost-rider/`. 5,824 distinct HTML
+pages — effectively the whole job inventory — each loaded ~1.85×, plus the full asset
+set per load. 17,480 × 403 for `.js.map` (100% of the day's 403s).
+
+**AdSense/GA4 reconciliation.** 10,766 Lighthouse HTML loads × ~2 ≈ 21,500 ≈ the
+21,462 US page views AdSense reported, with 36 impressions and 0 clicks (Google's
+invalid-traffic filter declining its own infrastructure). GA4 logged only 1,138,
+because the GA4 tag is delayed 1s and Lighthouse finishes first.
+
+**The /blog theory was wrong.** `sg-cachepress` was deleted with `/blog` on Oct 13;
+the flood recurred the next day. The actual predictor is an **Ahrefs Site Audit run**:
+
+| | Oct 14 | Sep 23 | Sep 30 (Wed) | Oct 7 (Wed) | Oct 13 |
+|---|---|---|---|---|---|
+| Lighthouse | 149,596 | 99,659 | 22 | 0 | 92 |
+| AhrefsSiteAudit | 5,864 | 5,600 | 3 | 3 | 13 |
+
+Ahrefs begins ~90 min earlier (08:03 both days) and ends within a minute of
+Lighthouse (12:46:34/12:46:54 Oct 14; 12:40:45/12:41:30 Sep 23). **100% of
+Lighthouse's HTML pages were also crawled by Ahrefs** (5,821/5,824 and 5,327/5,328).
+Mechanism: Site Audit's Core Web Vitals feature calls the PageSpeed Insights API per
+URL; PSI runs Lighthouse from Google's proxies. The "Wednesday pattern" was just the
+audit schedule — two Wednesdays with no Ahrefs run had no flood.
+
+**Action: do NOT block the IPs** — they are Google's and shared with other services.
+Turn off Core Web Vitals / PSI collection in Ahrefs Site Audit settings (or pause the
+audit). Separately, drop `sourceMappingURL` from the production JS build: removes
+17,480 × 403 per run, ~12% of the flood.
+
+**Instrument notes.** Oct 14 UTC spans two log files because rotation is ~04:33:
+`-2026-10-14.gz` (13/Oct 04:38 → 14/Oct 04:31) and `-2026-10-15.gz` (14/Oct 04:31 →
+15/Oct 04:27). There is no live uncompressed log on disk — during the event itself the
+only readable proxy was session-file mtimes (`SESSION_DRIVER=file`), which showed
+~2,200 origin page hits/hour. Counts here were done in Python; `grep -c` on a single
+file silently returns 0 on this Mac. Parse control: Googlebot lines 2,152 / 2,046 /
+2,377 on Oct 14 / Oct 13 / Sep 23.
+
+---
+
 ## 2026-10-13 — `/blog` WordPress install removed (it was the source of the credential exposure)
 
 **Why.** The `/security-check` sweep found two full-site backups downloadable at the web root: `public_html_2_9_2026.zip` (245 MB, 10,134 files) and `public_html.zip` (124 MB). The first was confirmed downloadable (HTTP 206 + `PK\x03\x04`); the second returned 403 only because the WAF happens to match that filename. **9,231 of the 10,134 entries were `blog/`**, and both archives contained `blog/wp-config.php` **byte-identical to the live file** — the WordPress DB password and all 8 auth keys/salts. **Neither archive contained `laravel/` (0 entries), so no Laravel credential was exposed.**
