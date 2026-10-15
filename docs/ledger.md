@@ -4,6 +4,38 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-15 — Status 6 (quota full) is an unhandled lifecycle state: 621 pages advertised expired JobPostings
+
+**Found while checking why four early-2025 top-ranking job pages (108421, 112252, 112112, 113067) had lost value.** They had not been redirected or 410'd — all four were **live, 200, indexable, with `JobPosting` schema**, for listings that closed in Nov 2024 – Jan 2025. `validThrough` read `2024-11-29`, `2025-01-16`, `2025-01-14`, `2025-01-26` — 21–23 months in the past.
+
+**Why the lifecycle never touched them.** `JobController::detail()` branches on statuses 1/2 (→404) and 4/5 (→`handleExpiredJob()`); **status 6 falls straight through to the published render path**. `createSchema()` had the same gap: it suppressed schema for 2/4/5 only. By the tier rules these pages are 637–695 days past expiry, i.e. Tier 3 → 410, but that code never runs for them.
+
+**Status 6 is terminal.** It is set in exactly one place — `FetchApplicationLogs.php:175`, the hourly ValueCommerce cron, when the affiliate feed reports the employer's quota is filled. Every status write in `app/` was audited: `jobs:auto-trash` only moves **status 3** past `delete_at` → 4, and the admin/analytics paths are operator-driven. **Nothing automatic ever moves a job out of 6**, which is why 591 of the 621 are more than a year old (oldest `delete_at` 2024-10-18).
+
+**These pages earn their keep, so they were kept live.** 30 days of logs: **2,749 human (non-bot) hits** across **190 of the 621** pages, ≈92/day. Top: 121561 Sendai (63), 109867 Tennoji (40), 124099 (38), 119482 Omiya (34). They are **not in the sitemap** (0 of 621 — `SitemapController` filters `job_status_id = 3`), so they rank from history and internal links. The human-facing page is already honest: `detail.blade.php` shows a **"Quota Full"** badge (lines 74, 255) and the apply CTA is gated on status 3, so no visitor is sent to a dead listing. Only the machine-readable signal was wrong.
+
+**Fix (`8e6a1f7`, deployed 2026-10-15):** `Job::STATUS_QUOTA_FULL` added to the `createSchema()` exclusion list. One file, one condition. No routing, `noindex` or redirect change.
+
+**Verified, cache-busted, homepage control first and last:**
+
+| Page | before | after |
+|---|---|---|
+| 108421 status 6 | 200, JobPosting **1**, validThrough 2024-11-29, 59,509 B | 200, JobPosting **0**, no validThrough, 58,119 B |
+| 112112 status 6 | 200, JobPosting **1**, validThrough 2025-01-14 | 200, JobPosting **0** |
+| 121561 status 6 (top traffic) | — | 200, JobPosting **0**, "Quota Full" present, 32 related links |
+| 162932 published (control) | 200, JobPosting **1**, validThrough 2026-10-30, 67,534 B | **unchanged**, byte-identical |
+| 162698 Tier 1 | 200 + `noindex, follow`, 0 schema | unchanged, byte-identical |
+| 145418 Tier 2 | 301 → `/part-time-jobs-in-osaka-city-minato-ku` | unchanged |
+| listing, /admin/login, homepage | 0 schema | unchanged, byte-identical |
+
+All status-6 pages keep HTTP 200, the "Quota Full" badge and 32 related-job links; only ~1.4 KB of JSON-LD disappears.
+
+**Still open (deliberately not fixed here).** The pile grows ~30/month because status 6 has no exit. The durable fix is to let `jobs:auto-trash` consider status 6 past `delete_at` too — but that retires the 190 pages still drawing traffic, so it needs its own decision. Parked.
+
+**Note:** `php -l` on `JobController.php` emits a pre-existing deprecation (`detail(): implicitly marking parameter $slug as nullable`, line 16) — unrelated to this change, worth fixing when PHP 8.4 lands.
+
+---
+
 ## 2026-10-14 — Lighthouse flood #4 (149,596 req): the trigger is Ahrefs Site Audit, not /blog
 
 **Event.** 200,029 requests on Oct 14 vs 40,558 on Oct 13. 149,596 (75%) were
