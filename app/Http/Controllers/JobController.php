@@ -278,8 +278,17 @@ class JobController extends Controller
 
     private function createSchema(Job $job): string
     {
-        // No schema for non-active jobs
-        if (in_array((int) $job->job_status_id, [Job::STATUS_PENDING, Job::STATUS_EXPIRED, Job::STATUS_TRASHED])) {
+        // No schema for non-active jobs.
+        // STATUS_QUOTA_FULL added 2026-10-15: the employer's quota is filled, so the
+        // posting is no longer open. 621 such pages were emitting JobPosting with a
+        // validThrough up to 23 months in the past. The page itself stays 200 and
+        // indexable — it already shows a "Quota Full" badge and hides the apply CTA.
+        if (in_array((int) $job->job_status_id, [
+            Job::STATUS_PENDING,
+            Job::STATUS_EXPIRED,
+            Job::STATUS_TRASHED,
+            Job::STATUS_QUOTA_FULL,
+        ])) {
             return '';
         }
 
