@@ -7,7 +7,7 @@ description: Start-of-session sync check (Mac or Windows) — is this repo in sy
 This project is worked on from two machines (Windows PC and MacBook). Production is not a git checkout; GitHub `origin/main` is the source of truth. An uncommitted changeset on one machine caused the Aug 28 incident. This command makes sure we never work on a stale copy or lose work that only exists here.
 
 **Machine-specific repo paths:**
-- Mac: `/Users/yousuf/Projects/nihonarubaito/laravel`
+- Mac: `/Users/sawoodahmed/Desktop/nihonarubaito_laravel`
 - Windows: `C:\Users\Tech Fever\Desktop\nihonarubaito\laravel`
 
 Rules:
