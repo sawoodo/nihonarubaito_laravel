@@ -560,6 +560,12 @@ class CreateJobFromXmlController extends Controller
      */
     private function correctLocationFromAddress(array $jobData, string $address): array
     {
+        // Everything below is an enhancement to the import, never a dependency of
+        // it. If the lookup cannot run, the job must still import with whatever
+        // the XML said -- a failed location check is a note for a translator, not
+        // a 500 on the import screen.
+        $original = $jobData;
+
         $this->lastLocationVerdict = ['corrections' => [], 'review' => [], 'address' => $address];
 
         if (trim($address) === '') {
@@ -570,8 +576,24 @@ class CreateJobFromXmlController extends Controller
             return $jobData;
         }
 
-        $this->locationResolver ??= AddressLocationResolver::fromDatabase();
-        $verdict = $this->locationResolver->resolve($address);
+        try {
+            $this->locationResolver ??= AddressLocationResolver::fromDatabase();
+            $verdict = $this->locationResolver->resolve($address);
+        } catch (\Throwable $e) {
+            Log::error('XML import: location check unavailable', [
+                'error'   => $e->getMessage(),
+                'address' => $address,
+            ]);
+            $this->lastLocationVerdict = [
+                'corrections' => [],
+                'review'      => [
+                    ['field' => 'prefecture_id', 'reason' => 'location check unavailable'],
+                    ['field' => 'area_id',       'reason' => 'location check unavailable'],
+                ],
+                'address' => $address,
+            ];
+            return $original;   // untouched XML values
+        }
 
         foreach ([['prefecture_id', 'prefecture'], ['area_id', 'area']] as [$field, $key]) {
             $got = $verdict[$key];
@@ -622,9 +644,14 @@ class CreateJobFromXmlController extends Controller
             return $this->locationLabelCache[$key];
         }
 
-        $name = $field === 'prefecture_id'
-            ? Prefecture::whereKey($id)->value('english')
-            : Area::whereKey($id)->value('english');
+        try {
+            $name = $field === 'prefecture_id'
+                ? Prefecture::whereKey($id)->value('english')
+                : Area::whereKey($id)->value('english');
+        } catch (\Throwable $e) {
+            // A missing label must not cost us the correction itself.
+            $name = null;
+        }
 
         return $this->locationLabelCache[$key] = (string) ($name ?: "id {$id}");
     }
