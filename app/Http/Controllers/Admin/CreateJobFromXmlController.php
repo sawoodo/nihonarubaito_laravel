@@ -9,6 +9,7 @@ use App\Models\Language;
 use App\Models\Prefecture;
 use App\Models\User;
 use App\Models\Area;
+use App\Services\AddressLocationResolver;
 use App\Services\JobDeduplicator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,16 @@ use Illuminate\Support\Facades\Log;
 
 class CreateJobFromXmlController extends Controller
 {
+    /**
+     * Verdict from the last createJobArray() call: what the address said about
+     * prefecture/area, what we changed, and what a human must check.
+     * Read it immediately after the call -- the bulk path loops.
+     */
+    private array $lastLocationVerdict = [];
+
+    /** Lazily built once per request; the areas lookup is ~1,892 rows. */
+    private ?AddressLocationResolver $locationResolver = null;
+
     /**
      * Maps the translation prompt's short slugs to the SEO slugs stored in `tags`.
      * Slugs not listed here are looked up as-is.
@@ -143,12 +154,18 @@ class CreateJobFromXmlController extends Controller
                 }
             }
 
+            $locationVerdict = $this->lastLocationVerdict;
+
             $job = Job::create($jobData);
             $job->update(['job_no' => (string) $job->id]);
             $this->attachTagsFromXml($xml, $job->id);
 
+            $this->lastLocationVerdict = $locationVerdict;
+            $this->logLocationVerdict((string) $job->job_no);
+
             $redirect = redirect("/admin/jobs/{$job->job_no}/edit")
-                ->with('success', 'Job has been successfully created from XML.');
+                ->with('success', 'Job has been successfully created from XML.')
+                ->with('location_verdict', $locationVerdict);
 
             // Unresolved prefecture: the job is saved but cannot be published until a
             // prefecture and area are set. Tell the user, with the raw XML value.
@@ -223,6 +240,8 @@ class CreateJobFromXmlController extends Controller
             $jobs = [];
             $xmlObjects = []; // Preserve XML for tag parsing
 
+            $locationVerdicts = [];   // index-aligned with $jobs
+
             foreach ($xml->job as $jobXml) {
                 $jobs[] = $this->createJobArray(
                     $jobXml,
@@ -235,6 +254,8 @@ class CreateJobFromXmlController extends Controller
                     $user->id,   // user_id
                     0            // img_id
                 );
+                // Capture before the next iteration overwrites it.
+                $locationVerdicts[] = $this->lastLocationVerdict;
                 $xmlObjects[] = $jobXml; // Keep XML for tag attachment
             }
 
@@ -244,6 +265,8 @@ class CreateJobFromXmlController extends Controller
 
             // Batch insert with duplicate detection
             $dupCount = 0;
+            $correctedCount = 0;
+            $reviewCount = 0;
             foreach ($jobs as $index => $jobData) {
                 // Tier 0: apply_link check (exact URL match)
                 $existingByUrl = JobDeduplicator::findByApplyLink($jobData['apply_link'] ?? '');
@@ -254,6 +277,8 @@ class CreateJobFromXmlController extends Controller
                     $job = Job::create($jobData);
                     $job->update(['job_no' => (string) $job->id]);
                     $this->attachTagsFromXml($xmlObjects[$index], $job->id);
+                    $this->lastLocationVerdict = $locationVerdicts[$index] ?? [];
+                    $this->logLocationVerdict((string) $job->job_no);
                     continue;
                 }
 
@@ -271,11 +296,22 @@ class CreateJobFromXmlController extends Controller
                 $job = Job::create($jobData);
                 $job->update(['job_no' => (string) $job->id]);
                 $this->attachTagsFromXml($xmlObjects[$index], $job->id);
+
+                $this->lastLocationVerdict = $locationVerdicts[$index] ?? [];
+                $this->logLocationVerdict((string) $job->job_no);
+                $correctedCount += count($locationVerdicts[$index]['corrections'] ?? []);
+                $reviewCount    += count($locationVerdicts[$index]['review'] ?? []);
             }
 
             $msg = count($jobs) . ' jobs created.';
             if ($dupCount > 0) {
                 $msg .= " {$dupCount} flagged as possible duplicates (saved as Draft).";
+            }
+            if ($correctedCount > 0) {
+                $msg .= " {$correctedCount} location field(s) corrected from the address.";
+            }
+            if ($reviewCount > 0) {
+                $msg .= " {$reviewCount} need a manual location check.";
             }
 
             return response()->json([
@@ -395,7 +431,7 @@ class CreateJobFromXmlController extends Controller
                 'title'          => mb_substr((string) ($xml->title ?? ''), 0, 80),
             ]);
         }
-        return [
+        $payload = [
             'job_no'               => '',
             'title'                => (string) ($xml->title ?? ''),
             'company_name'         => (string) ($xml->company ?? ''),
@@ -428,6 +464,11 @@ class CreateJobFromXmlController extends Controller
             'job_status_id'        => Job::STATUS_PENDING,
             'user_id'              => $userId,
         ];
+
+        // Address beats the feed's prefecture_id/area_id. Done here, before the
+        // caller's duplicate check, so findDuplicate() compares the corrected
+        // location rather than the wrong one.
+        return $this->correctLocationFromAddress($payload, $payload['address']);
     }
 
     /**
@@ -505,5 +546,131 @@ class CreateJobFromXmlController extends Controller
         // Sanitize bare & characters that aren't already XML entities
         $xml = preg_replace('/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/', '&amp;', $xml);
         return $xml;
+    }
+    /**
+     * Correct prefecture_id / area_id from the Japanese address.
+     *
+     * The address in the feed is authoritative; the prefecture_id/area_id the
+     * translator's tool emits is not (Kanagawa in particular). Where the
+     * address is decisive and disagrees, the address wins. Where it is vague,
+     * the XML value stands and the field is marked for manual review -- we
+     * never guess, because a confident wrong location is worse than a blank.
+     *
+     * Returns the corrected payload; the verdict lands in $lastLocationVerdict.
+     */
+    private function correctLocationFromAddress(array $jobData, string $address): array
+    {
+        $this->lastLocationVerdict = ['corrections' => [], 'review' => [], 'address' => $address];
+
+        if (trim($address) === '') {
+            $this->lastLocationVerdict['review'][] = [
+                'field'  => 'prefecture_id',
+                'reason' => 'no address in the feed — cannot verify',
+            ];
+            return $jobData;
+        }
+
+        $this->locationResolver ??= AddressLocationResolver::fromDatabase();
+        $verdict = $this->locationResolver->resolve($address);
+
+        foreach ([['prefecture_id', 'prefecture'], ['area_id', 'area']] as [$field, $key]) {
+            $got = $verdict[$key];
+            $xmlValue = (int) ($jobData[$field] ?? 0);
+
+            if (! $got['decisive'] || $got['id'] === null) {
+                // Vague address: keep whatever the XML said and ask a human.
+                $this->lastLocationVerdict['review'][] = [
+                    'field'  => $field,
+                    'reason' => $got['reason'],
+                ];
+                continue;
+            }
+
+            if ($got['id'] === $xmlValue) {
+                continue;   // feed already agreed with the address
+            }
+
+            $jobData[$field] = $got['id'];
+            $this->lastLocationVerdict['corrections'][] = [
+                'field'     => $field,
+                'from'      => $xmlValue,
+                'to'        => $got['id'],
+                'matched'   => $got['name'],
+                'from_label' => $this->locationLabel($field, $xmlValue),
+                'to_label'   => $this->locationLabel($field, $got['id']),
+            ];
+        }
+
+        return $jobData;
+    }
+
+    /**
+     * Human-readable name for a prefecture/area id, for notes and logs.
+     * Memoised per request: the bulk path can correct hundreds of fields in one
+     * loop, and an uncached lookup here would be a straight N+1.
+     */
+    private array $locationLabelCache = [];
+
+    private function locationLabel(string $field, int $id): string
+    {
+        if ($id <= 0) {
+            return '(not set)';
+        }
+
+        $key = $field . ':' . $id;
+        if (isset($this->locationLabelCache[$key])) {
+            return $this->locationLabelCache[$key];
+        }
+
+        $name = $field === 'prefecture_id'
+            ? Prefecture::whereKey($id)->value('english')
+            : Area::whereKey($id)->value('english');
+
+        return $this->locationLabelCache[$key] = (string) ($name ?: "id {$id}");
+    }
+
+    /**
+     * Append one line per correction so we can count feed errors per prefecture.
+     *
+     * Written straight to its own file rather than through Log::: production
+     * runs LOG_LEVEL=error, so Log::info()/warning() would be discarded and we
+     * would silently collect nothing. Tab-separated for awk/grep counting.
+     */
+    private function logLocationVerdict(string $jobNo): void
+    {
+        $v = $this->lastLocationVerdict;
+        if (empty($v['corrections']) && empty($v['review'])) {
+            return;
+        }
+
+        $dir = storage_path('logs');
+        $file = $dir . '/location-corrections-' . date('Y-m') . '.log';
+        $stamp = date('c');
+        $addr = str_replace(["\t", "\n", "\r"], ' ', (string) ($v['address'] ?? ''));
+        $lines = '';
+
+        foreach ($v['corrections'] as $c) {
+            $lines .= implode("\t", [
+                $stamp, 'CORRECTED', $jobNo, $c['field'],
+                $c['from'] . ' (' . $c['from_label'] . ')',
+                $c['to'] . ' (' . $c['to_label'] . ')',
+                'matched=' . $c['matched'], $addr,
+            ]) . "\n";
+        }
+        foreach ($v['review'] as $r) {
+            $lines .= implode("\t", [
+                $stamp, 'REVIEW', $jobNo, $r['field'], '', '', $r['reason'], $addr,
+            ]) . "\n";
+        }
+
+        try {
+            if (! is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
+            file_put_contents($file, $lines, FILE_APPEND | LOCK_EX);
+        } catch (\Throwable $e) {
+            // Logging must never break an import.
+            Log::error('location-correction log write failed', ['error' => $e->getMessage()]);
+        }
     }
 }

@@ -1,3 +1,18 @@
+{{-- Location notes from the XML import: what the address changed, and what
+     still needs a human. Translators can still edit both selects freely. --}}
+@php
+    $lv = session('location_verdict', []);
+    $locNote = [];
+    foreach ($lv['corrections'] ?? [] as $c) {
+        $locNote[$c['field']][] = ['type' => 'corrected', 'text' =>
+            'Corrected from ' . $c['from_label'] . ' to ' . $c['to_label'] . ' (from address)'];
+    }
+    foreach ($lv['review'] ?? [] as $r) {
+        $locNote[$r['field']][] = ['type' => 'review', 'text' =>
+            'Please check — address unclear (' . $r['reason'] . ')'];
+    }
+@endphp
+
 @extends('layouts.admin')
 
 @section('content')
@@ -125,6 +140,11 @@
                             @endforeach
                         </select>
                         @error('prefecture_id') <span class="help-block">{{ $message }}</span> @enderror
+                        @foreach ($locNote['prefecture_id'] ?? [] as $n)
+                            <p class="help-block" style="margin-bottom:0;color:{{ $n['type'] === 'corrected' ? '#31708f' : '#8a6d3b' }};font-weight:600;">
+                                {{ $n['type'] === 'corrected' ? '✔' : '⚠' }} {{ $n['text'] }}
+                            </p>
+                        @endforeach
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -136,6 +156,11 @@
                             @endforeach
                         </select>
                         @error('area_id') <span class="help-block">{{ $message }}</span> @enderror
+                        @foreach ($locNote['area_id'] ?? [] as $n)
+                            <p class="help-block" style="margin-bottom:0;color:{{ $n['type'] === 'corrected' ? '#31708f' : '#8a6d3b' }};font-weight:600;">
+                                {{ $n['type'] === 'corrected' ? '✔' : '⚠' }} {{ $n['text'] }}
+                            </p>
+                        @endforeach
                     </div>
                 </div>
             </div>

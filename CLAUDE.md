@@ -26,7 +26,18 @@ ValueCommerce affiliate (job apply clicks).
 ## Database Key Tables
 - jobs: job_no, title, description, wage, prefecture_id, area_id, job_category_id,
   job_status_id, apply_link, delete_at, user_id
-- prefectures: id, english, japanese | areas: id, prefecture_id, english, japanese
+- prefectures: id, english, japanese, region_id
+- towns: id, prefecture_id, english, japanese (47 rows — one per prefecture)
+- areas: id, **town_id**, english, japanese, postal_code (1,892 rows)
+- IMPORTANT: areas have NO prefecture_id. Join areas → prefectures through towns:
+  `areas.town_id → towns.id`, then `towns.prefecture_id`. Verified 2026-10-21.
+- `prefectures.japanese` is NOT a safe match key: 40 of 47 rows hold the bare name
+  (東京), 4 hold the full official name (愛知県), and 3 are wrong — id 14 Niigata
+  `新潟市`, id 23 Kumamoto `熊本市` (city names) and id 39 Wakayama `若山`
+  (wrong characters). Match prefecture names against a canonical list and resolve
+  to ids via `english`, which is clean for all 47 — see App\Services\AddressLocationResolver.
+  Not public (every published job is lang_id=1, so prefecture_name renders from
+  `english`); it does feed the admin demand-supply shigotoin search links.
 - blog_posts: id, slug, lang_id, title, post (HTML for prefecture pages)
 - job_categories: 1=Packing/Sorting, 2=Restaurant, 3=Convenience Store,
   4=Bed Making/Cleaning, 5=Delivery
