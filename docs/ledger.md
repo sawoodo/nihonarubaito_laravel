@@ -317,6 +317,80 @@ Area 711's vietnamese column still read "Hamamatsu chuo-ku," after the english-o
 
 ---
 
+## 2026-10-21 — XML import set the wrong prefecture/area; the address was always right
+
+**Symptom.** Imported jobs arrived with a wrong `prefecture_id`/`area_id` (Kanagawa
+especially); translators fixed them by hand on the preview page. Two live jobs were
+addressed in 神奈川県横浜市西区 but stored as Osaka.
+
+**Not the translators' table.** Diffed their 47-row ID reference against `prefectures`:
+zero id→english mismatches, and all 47 of their Japanese names are the correct official
+forms. The error is upstream, in the address-reading step. Checking the reference first
+stopped a day of fixing the wrong thing.
+
+**`prefectures.japanese` is not a safe match key.** 40 of 47 rows hold the bare name
+(東京), 4 the full official name (愛知県), and 3 were simply wrong — id 14 Niigata
+`新潟市`, id 23 Kumamoto `熊本市` (city names) and id 39 Wakayama `若山` (wrong kanji).
+Matching that column would have failed silently for exactly those three prefectures.
+Fixed to 新潟 / 熊本 / 和歌山 with an `english` guard. Not public — every published job
+is `lang_id=1`, so `prefecture_name` renders from `english` — but it feeds the admin
+demand-supply shigotoin search links, where `若山` returned nothing, quietly starving
+Wakayama sourcing.
+
+**Schema correction.** `areas` has NO `prefecture_id`. It hangs off `towns`
+(`areas.town_id → towns.id → towns.prefecture_id`, 47 towns, 1,892 areas). CLAUDE.md had
+this wrong and is now corrected.
+
+**Two substring traps that produce confident wrong answers.** Always match the full
+prefecture name *with* its 都/道/府/県 suffix:
+  - `京都` is a substring of `東京都` → a Tokyo address reads as Kyoto
+  - `神奈川` is a substring of `横浜市神奈川区` → a Yokohama ward hijacks the prefecture
+Area matching takes the longest `areas.japanese` contained in the address, which is what
+makes 横浜市中区 beat a bare 中区, 堺市西区 beat 大阪市西区, and 東広島市 beat 広島市東区.
+
+**Measuring against "what the team saved" needs adjudication, not a match rate.** Raw
+agreement on the last 250 imports was 99.2% prefecture / 92.0% area — but the
+"disagreements" were mostly the resolver being right. Adjudicating each one *textually*
+(does the name occur verbatim in the address?) gave 17 resolver-right, **0**
+resolver-wrong, 3 empty areas filled, 1 correctly flagged. A bare match rate would have
+read as 8% error when the true error was zero.
+
+**Bulk fix (183 of 6,254 published jobs).** 2 prefecture + 181 area. Guarded UPDATEs
+(`WHERE job_no=… AND prefecture_id=… AND area_id=…`) so the run is idempotent and a
+no-op on any row a translator changed meanwhile. Verified: 183 at new values, 0 at old.
+`updated_at` deliberately NOT bumped — it is the only "last human edit" signal this
+schema has (no status/field history table exists), and bumping 183 rows would destroy it.
+
+**Held back, deliberately: 2 jobs.** `144213` 栃木県那須塩原市（勤務地は那須町） — the
+bracket names a *different* municipality, so neither value is certainly right. `163725`
+千葉県山武市芝山町岩山 — self-contradictory address, and edited 2h earlier. A first-pass
+rule held all 7 bracketed addresses; six were building/store names (（新千歳空港内）,
+（大丸心斎橋店内）) that do not contradict the address, so the rule now fires only when the
+bracket contains a municipality marker 市区町村郡. Over-broad guards cost real fixes.
+
+**URLs do not move.** Job URLs are `/jobs/{job_no}/detail/{slug}` with
+`slug = Str::slug("english-" . title)` — language + title only. Changing
+`prefecture_id`/`area_id` changes no URL, canonical or sitemap entry. Confirmed against
+live 301 targets before writing. Job 163735's URL already said `in-kanagawa` while its id
+said Osaka; the fix aligned the id *to* the URL.
+
+**Area-page side effects, measured:** 17 area pages dropped to 0 published jobs (now
+noindexed by the existing three-guard logic) and 7 rose from 0 (now indexable). All are
+long-tail municipalities with 1–2 listings. Worth knowing a correct data fix still moves
+indexable surface area.
+
+**Fail-safe matters more than the feature.** The first deploy called
+`AddressLocationResolver::fromDatabase()` unguarded inside the import; a DB failure would
+have 500'd the admin import screen — an enhancement acting as a dependency. Now wrapped:
+on any Throwable the import proceeds with the XML's own values and both fields are marked
+"location check unavailable" for a human. Commits `7a2f74e`, `054f4b5`.
+
+**Rollback artefacts:** `~/exports/location-fix-backup-20261021-180617.tsv`
+(183 rows, md5 `91bd2f3ad450f9c85eb92ee83b1cc7af`) and `fix-rollback.sql`, guarded on the
+new values.
+
+---
+
 ## Standing environment notes
 
 - **SSH:** ssh.nihonarubaito.com port 18765, user u4602-zegubfmytubg, Laravel root `~/www/nihonarubaito.com/public_html/laravel/`. All production DB work runs via SSH — never local XAMPP (a wrong-target near-miss occurred when a step ran against the empty local DB).
