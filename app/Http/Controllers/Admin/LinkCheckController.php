@@ -56,6 +56,9 @@ class LinkCheckController extends Controller
     /** Staged uploads older than this are swept up. */
     private const STAGE_TTL_HOURS = 24;
 
+    /** Group cards rendered on a plain page load before "show all". */
+    private const GROUP_PAGE_CAP = 50;
+
     /** Same gate as the other analytics pages, reading the one shared constant. */
     private function authorizeSuperAdmin(): void
     {
@@ -70,9 +73,12 @@ class LinkCheckController extends Controller
         $this->authorizeSuperAdmin();
         $this->sweepStaleUploads();
 
+        $open = $this->loadOpenItems($request->boolean('all'));
+
         return view('admin.analytics.link-check', [
             'activeSideMenu' => 'link_check',
             'preview'        => null,
+            'open'           => $open,
             'recent'         => $this->recentBatches(),
         ]);
     }
@@ -182,13 +188,16 @@ class LinkCheckController extends Controller
             }
         });
 
+        $kept = $this->persistOpenItems($plan, $batch, $actor);
+
         $this->logBatch($batch, $actor, $plan, $extended, $relinked, $skipped);
         $this->discardStaged($token);
 
         $msg = "{$extended} job(s) extended by " . self::EXTEND_DAYS . ' days'
              . ($relinked ? ", {$relinked} apply link(s) rewritten" : '')
              . ($skipped ? ", {$skipped} skipped (changed since the scan)" : '')
-             . ". Batch {$batch}.";
+             . ". Batch {$batch}."
+             . ($kept ? "  {$kept} open item(s) saved for review below." : '');
 
         return redirect()->route('admin.analytics.link-check')->with('success', $msg);
     }
@@ -232,6 +241,12 @@ class LinkCheckController extends Controller
                 'dismissed_at' => now(),
             ]);
 
+            DB::table('link_check_open_items')
+                ->where('group_hash', MovedTargetMatcher::groupHash($data['final_url']))
+                ->whereNull('resolved_at')
+                ->update(['resolved_at' => now(), 'resolved_by' => $actor,
+                          'resolved_action' => 'not_duplicate', 'updated_at' => now()]);
+
             return back()->with('success',
                 'Marked as not a duplicate — this group will not be shown again.');
         }
@@ -272,6 +287,9 @@ class LinkCheckController extends Controller
                     "duplicate of job {$keep->job_no} (same final offer)");
             }
         });
+
+        // the group is settled either way
+        $this->resolveForJobs($jobNos, 'kept_' . substr($data['action'], 5), $actor);
 
         $msg = "Kept job {$keep->job_no}; trashed {$done} duplicate(s)."
              . ($skipped ? " {$skipped} skipped (changed since the preview)." : '');
@@ -316,6 +334,8 @@ class LinkCheckController extends Controller
                 $job->delete_at, $job->delete_at, 'link-check-action', $actor, $batch,
                 'expired from link-check review');
 
+            $this->resolveForJobs([$job->job_no], 'expired', $actor);
+
             return back()->with('success', "Job {$job->job_no} expired.");
         }
 
@@ -334,6 +354,8 @@ class LinkCheckController extends Controller
             $job->delete_at, $new, 'link-check-action', $actor, $batch,
             'extended +' . self::EXTEND_DAYS . ' days from link-check review');
 
+        $this->resolveForJobs([$job->job_no], 'extended', $actor);
+
         return back()->with('success',
             "Job {$job->job_no} extended to " . date('d M Y', strtotime($new)) . '.');
     }
@@ -348,6 +370,7 @@ class LinkCheckController extends Controller
 
         return view('admin.analytics.link-check', [
             'activeSideMenu' => 'link_check',
+            'open'           => null,
             'preview'        => $plan + [
                 'token'       => $token,
                 'file_name'   => is_file($nameFile) ? file_get_contents($nameFile) : 'uploaded.csv',
@@ -744,6 +767,360 @@ class LinkCheckController extends Controller
         ];
     }
 
+
+    // ── open items ────────────────────────────────────────────────────────
+
+    /**
+     * Save the work this Apply surfaced but did not do.
+     *
+     * Deliberately NOT saved:
+     *   - "apply_link changed since the scan" rows. We rewrote those links
+     *     ourselves, so the CSV no longer matches — the job is already handled.
+     *     On 2026-10-23 there were 458 of them against 4 real items; keeping
+     *     them would bury the real work.
+     *   - ERROR rows. An ERROR means the check failed, not that the job did,
+     *     and the next scan retries them first.
+     *   - anything no longer Published. Nothing to act on.
+     *
+     * Upsert on item_key with resolved_at cleared, so an item that reappears
+     * in a later scan reopens instead of duplicating.
+     *
+     * @return int rows written or reopened
+     */
+    private function persistOpenItems(array $plan, string $batch, string $actor): int
+    {
+        $now = now();
+        $n = 0;
+
+        foreach ($plan['review'] as $row) {
+            if ((int) $row['status'] !== Job::STATUS_PUBLISHED) {
+                continue;
+            }
+            if ($row['class'] === 'ERROR') {
+                continue;
+            }
+            if (str_contains((string) $row['note'], 'changed since the scan')) {
+                continue;
+            }
+            $this->upsertOpenItem('review:' . $row['job_no'], [
+                'kind'           => 'review',
+                'job_no'         => $row['job_no'],
+                'group_hash'     => null,
+                'final_url'      => $row['final_url'] ?? null,
+                'page_title'     => mb_substr((string) ($row['page_title'] ?? ''), 0, 255),
+                'requested_url'  => $row['url'] ?? null,
+                'classification' => $row['class'],
+                'note'           => mb_substr((string) $row['note'], 0, 255),
+            ], $batch, $now);
+            $n++;
+        }
+
+        foreach ($plan['groups'] as $g) {
+            foreach ($g['jobs'] as $j) {
+                if ((int) $j['status'] !== Job::STATUS_PUBLISHED) {
+                    continue;
+                }
+                $this->upsertOpenItem('group:' . $g['hash'] . ':' . $j['job_no'], [
+                    'kind'           => 'group',
+                    'job_no'         => $j['job_no'],
+                    'group_hash'     => $g['hash'],
+                    'final_url'      => $g['final'],
+                    'page_title'     => mb_substr((string) $g['page_title'], 0, 255),
+                    'requested_url'  => $j['link'] ?? null,
+                    'classification' => 'SAME_FINAL_OFFER',
+                    'note'           => mb_substr((string) $g['evidence'], 0, 255),
+                ], $batch, $now);
+                $n++;
+            }
+        }
+
+        return $n;
+    }
+
+    private function upsertOpenItem(string $key, array $data, string $batch, $now): void
+    {
+        $existing = DB::table('link_check_open_items')->where('item_key', $key)->first();
+
+        if ($existing) {
+            DB::table('link_check_open_items')->where('item_key', $key)->update($data + [
+                'last_seen_batch' => $batch,
+                'resolved_at'     => null,     // seen again -> reopen
+                'resolved_by'     => null,
+                'resolved_action' => null,
+                'updated_at'      => $now,
+            ]);
+            return;
+        }
+
+        DB::table('link_check_open_items')->insert($data + [
+            'item_key'         => $key,
+            'first_seen_batch' => $batch,
+            'last_seen_batch'  => $batch,
+            'created_at'       => $now,
+            'updated_at'       => $now,
+        ]);
+    }
+
+    /**
+     * Unresolved items, joined to live job state, with anything that no longer
+     * applies resolved on the way through. Self-healing: a job retired or
+     * relinked elsewhere drops off without anyone clicking.
+     *
+     * Shapes match buildPlan() exactly so the preview and this list share the
+     * same Blade partials and cannot drift apart.
+     */
+    private function loadOpenItems(bool $showAll = false): array
+    {
+        try {
+            $items = DB::table('link_check_open_items')->whereNull('resolved_at')->get();
+        } catch (\Throwable $e) {
+            return ['groups' => [], 'review' => [], 'counts' => [
+                'groups' => 0, 'groupJobs' => 0, 'review' => 0, 'groupsDiff' => 0,
+                'shown' => 0, 'capped' => false,
+            ]];
+        }
+        if ($items->isEmpty()) {
+            return ['groups' => [], 'review' => [], 'counts' => [
+                'groups' => 0, 'groupJobs' => 0, 'review' => 0, 'groupsDiff' => 0,
+                'shown' => 0, 'capped' => false,
+            ]];
+        }
+
+        $jobs = DB::table('jobs')->whereIn('job_no', $items->pluck('job_no')->unique()->all())
+            ->select('job_no', 'title', 'job_status_id', 'apply_link', 'delete_at',
+                     'company_name', 'address', 'date')
+            ->get()->keyBy('job_no');
+        $dismissed = DB::table('dismissed_duplicates')->pluck('group_hash')->flip();
+
+        $resolve = [];      // item_key => action
+        $review = [];
+        $byGroup = [];
+
+        foreach ($items as $it) {
+            $job = $jobs[$it->job_no] ?? null;
+
+            if (! $job) {
+                $resolve[$it->item_key] = 'job_missing';
+                continue;
+            }
+            if ((int) $job->job_status_id !== Job::STATUS_PUBLISHED) {
+                $resolve[$it->item_key] = 'retired_elsewhere';
+                continue;
+            }
+            if ($it->requested_url && trim((string) $job->apply_link) !== trim((string) $it->requested_url)) {
+                $resolve[$it->item_key] = 'fixed_by_hand';
+                continue;
+            }
+            if ($it->kind === 'group' && isset($dismissed[$it->group_hash])) {
+                $resolve[$it->item_key] = 'dismissed';
+                continue;
+            }
+
+            if ($it->kind === 'review') {
+                $review[] = [
+                    'item_key' => $it->item_key,
+                    'job_no'   => $it->job_no,
+                    'class'    => $it->classification,
+                    'title'    => $job->title,
+                    'company'  => $job->company_name,
+                    'url'      => $it->requested_url,
+                    'final_url' => $it->final_url,
+                    'page_title' => $it->page_title,
+                    'current_link' => trim((string) $job->apply_link),
+                    'status'   => (int) $job->job_status_id,
+                    'delete_at' => $job->delete_at,
+                    'note'     => $it->note,
+                ];
+            } else {
+                $byGroup[$it->group_hash][] = [$it, $job];
+            }
+        }
+
+        // A group needs at least two live members to still be a duplicate.
+        $matcher = new MovedTargetMatcher();
+        $groups = [];
+        foreach ($byGroup as $hash => $members) {
+            if (count($members) < 2) {
+                foreach ($members as [$it, $_]) {
+                    $resolve[$it->item_key] = 'no_longer_duplicate';
+                }
+                continue;
+            }
+            $rows = [];
+            foreach ($members as [$it, $job]) {
+                $rows[] = [
+                    'item_key' => $it->item_key,
+                    'job_no' => $it->job_no, 'title' => $job->title,
+                    'company' => $job->company_name, 'address' => $job->address,
+                    'created' => $job->date, 'delete_at' => $job->delete_at,
+                    'status' => (int) $job->job_status_id, 'link' => $job->apply_link,
+                ];
+            }
+            usort($rows, fn ($a, $b) => strcmp((string) $a['created'], (string) $b['created']));
+            $rows[0]['is_oldest'] = true;
+
+            $first = $members[0][0];
+            $pageTitle = (string) $first->page_title;
+            $verdict = $matcher->sameGroup(array_map(
+                fn ($r) => ['company_name' => $r['company'], 'address' => $r['address']], $rows));
+
+            foreach ($rows as $i => $r) {
+                $m = $matcher->matches($r['company'], $r['address'], $pageTitle);
+                $rows[$i]['matches_page'] = $m['same'];
+                $rows[$i]['match_reason'] = $m['reason'];
+                $rows[$i]['is_oldest'] = $r['is_oldest'] ?? false;
+            }
+            $owner = null;
+            foreach ($rows as $r) {
+                if ($r['matches_page']) { $owner = $r['job_no']; break; }
+            }
+
+            $groups[] = [
+                'final' => (string) $first->final_url, 'hash' => $hash,
+                'page_title' => $pageTitle, 'jobs' => $rows,
+                'verdict' => $verdict['same'] ? 'same' : 'different',
+                'verdict_text' => $verdict['same'] ? 'Same job — duplicate' : 'Different jobs — shigotoin redirect',
+                'evidence' => $verdict['reason'] . ($verdict['shared_address'] !== ''
+                    ? ' (shared address text “' . $verdict['shared_address'] . '”)' : ''),
+                'owner' => $owner,
+                'job_nos' => implode(',', array_column($rows, 'job_no')),
+            ];
+        }
+
+        if ($resolve) {
+            $this->markResolved(array_keys($resolve), $resolve, 'auto');
+        }
+
+        usort($groups, fn ($a, $b) => [$a['verdict'] === 'same', -count($a['jobs'])]
+                                   <=> [$b['verdict'] === 'same', -count($b['jobs'])]);
+        $total = count($groups);
+        $capped = ! $showAll && $total > self::GROUP_PAGE_CAP;
+        $shown = $capped ? array_slice($groups, 0, self::GROUP_PAGE_CAP) : $groups;
+
+        return [
+            'groups' => $shown,
+            'review' => $review,
+            'counts' => [
+                'groups'     => $total,
+                'groupJobs'  => array_sum(array_map(fn ($g) => count($g['jobs']), $groups)),
+                'groupsDiff' => count(array_filter($groups, fn ($g) => $g['verdict'] !== 'same')),
+                'review'     => count($review),
+                'shown'      => count($shown),
+                'capped'     => $capped,
+            ],
+        ];
+    }
+
+    /** @param array<int,string> $keys */
+    private function markResolved(array $keys, array $actions, string $by): void
+    {
+        if (! $keys) {
+            return;
+        }
+        try {
+            foreach (array_chunk($keys, 200) as $chunk) {
+                foreach ($chunk as $k) {
+                    DB::table('link_check_open_items')->where('item_key', $k)
+                        ->whereNull('resolved_at')
+                        ->update([
+                            'resolved_at'     => now(),
+                            'resolved_by'     => $by === 'auto' ? 'auto' : $by,
+                            'resolved_action' => $actions[$k] ?? 'resolved',
+                            'updated_at'      => now(),
+                        ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::error('link-check: could not resolve open items', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /** Resolve every open item for these job numbers (used by the action handlers). */
+    private function resolveForJobs(array $jobNos, string $action, string $by): void
+    {
+        if (! $jobNos) {
+            return;
+        }
+        try {
+            DB::table('link_check_open_items')
+                ->whereIn('job_no', $jobNos)->whereNull('resolved_at')
+                ->update(['resolved_at' => now(), 'resolved_by' => $by,
+                          'resolved_action' => $action, 'updated_at' => now()]);
+        } catch (\Throwable $e) {
+            Log::error('link-check: resolveForJobs failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /** The "Done" button: clear an item without changing the job. */
+    public function doneItem(Request $request)
+    {
+        $this->authorizeSuperAdmin();
+        $data = $request->validate([
+            'item_key' => 'nullable|string|max:96',
+            'group_hash' => 'nullable|string|max:64',
+        ]);
+        $actor = $this->actorName();
+
+        if (! empty($data['group_hash'])) {
+            DB::table('link_check_open_items')
+                ->where('group_hash', $data['group_hash'])->whereNull('resolved_at')
+                ->update(['resolved_at' => now(), 'resolved_by' => $actor,
+                          'resolved_action' => 'done_by_hand', 'updated_at' => now()]);
+            return back()->with('success', 'Group marked done. It will not be shown again.');
+        }
+        if (! empty($data['item_key'])) {
+            $this->markResolved([$data['item_key']], [$data['item_key'] => 'done_by_hand'], $actor);
+            return back()->with('success', 'Item marked done.');
+        }
+
+        return back()->with('error', 'Nothing to mark done.');
+    }
+
+    /** What one batch actually changed. */
+    public function batchDetail(Request $request, string $batch)
+    {
+        $this->authorizeSuperAdmin();
+
+        if (! preg_match('/^[a-z]{2,3}-\d{8}-\d{6}(-[a-z0-9]{8})?$/i', $batch)) {
+            return redirect()->route('admin.analytics.link-check')
+                ->with('error', 'That batch id is not valid.');
+        }
+
+        $status = DB::table('job_status_history as h')
+            ->leftJoin('jobs as j', 'j.job_no', '=', 'h.job_no')
+            ->where('h.batch', $batch)
+            ->select('h.job_no', 'h.old_status', 'h.new_status', 'h.old_delete_at',
+                     'h.new_delete_at', 'h.reason', 'h.actor', 'h.source',
+                     'h.source_checked_at', 'h.created_at', 'j.title', 'j.job_status_id')
+            ->orderBy('h.id')->get();
+
+        if ($status->isEmpty()) {
+            return redirect()->route('admin.analytics.link-check')
+                ->with('error', "No history found for batch {$batch}.");
+        }
+
+        $links = DB::table('job_apply_link_history')->where('batch', $batch)
+            ->select('job_no', 'old_apply_link', 'new_apply_link', 'http_code', 'num_redirects')
+            ->orderBy('id')->get();
+
+        return view('admin.analytics.link-check-batch', [
+            'activeSideMenu' => 'link_check',
+            'batch'   => $batch,
+            'status'  => $status,
+            'links'   => $links,
+            'summary' => [
+                'rows'      => $status->count(),
+                'relinks'   => $links->count(),
+                'actor'     => $status->first()->actor,
+                'source'    => $status->first()->source,
+                'at'        => $status->first()->created_at,
+                'expired'   => $status->where('new_status', Job::STATUS_EXPIRED)->count(),
+                'trashed'   => $status->where('new_status', Job::STATUS_TRASHED)->count(),
+                'extended'  => $status->filter(fn ($r) => $r->old_status === $r->new_status)->count(),
+            ],
+        ]);
+    }
+
     /**
      * Append a run summary to its own file. Production runs LOG_LEVEL=error, so
      * Log::info() would be discarded and we would collect nothing.
@@ -784,7 +1161,7 @@ class LinkCheckController extends Controller
     {
         try {
             return DB::table('job_status_history')
-                ->whereIn('source', ['link-check', 'link-check-action'])
+                ->whereIn('source', ['link-check', 'link-check-action', 'bulk-expire'])
                 ->select('batch', 'actor', 'source', DB::raw('COUNT(*) as n'), DB::raw('MAX(created_at) as at'))
                 ->groupBy('batch', 'actor', 'source')
                 ->orderByDesc('at')

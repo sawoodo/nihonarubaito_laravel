@@ -179,108 +179,7 @@
             </div>
         </div>
         @foreach ($preview['groups'] as $g)
-        <div class="row">
-            <div class="col-lg-12">
-                <div class="panel {{ $g['verdict'] === 'same' ? 'panel-warning' : 'panel-danger' }}">
-                    <div class="panel-heading">
-                        <strong>{{ $g['verdict_text'] }}</strong>
-                        <span class="text-muted" style="margin-left:8px">{{ $g['evidence'] }}</span>
-                        <a href="{{ $g['final'] }}" target="_blank" rel="noopener nofollow" class="pull-right">
-                            {{ $g['final'] }} <i class="fa fa-external-link"></i>
-                        </a>
-                    </div>
-                    <div class="panel-body" style="padding-bottom:6px">
-                        <p style="margin-bottom:8px">
-                            <span class="text-muted">shigotoin page:</span> {{ $g['page_title'] ?: '(title not captured)' }}
-                        </p>
-                        @if ($g['verdict'] !== 'same')
-                            <div class="alert alert-danger" style="padding:8px 12px; margin-bottom:10px">
-                                These are <strong>not duplicates</strong> — do not trash either.
-                                @if ($g['owner'])
-                                    The page belongs to <strong>job {{ $g['owner'] }}</strong>;
-                                    the other job(s) have the wrong link stored and need fixing by hand via <em>Open job</em>.
-                                @else
-                                    None of our jobs matches the destination page, so every link here is suspect.
-                                @endif
-                            </div>
-                        @endif
-                        <div class="table-responsive">
-                            <table class="table table-condensed" style="margin-bottom:0">
-                                <thead><tr>
-                                    <th>Job</th><th>Age</th><th>Company</th><th>Title</th>
-                                    <th>Address</th><th>Created</th><th>delete_at</th><th>Owns page?</th><th></th>
-                                </tr></thead>
-                                <tbody>
-                                @foreach ($g['jobs'] as $j)
-                                    <tr @if ($j['matches_page']) style="background:#f6fff6" @endif>
-                                        <td>{{ $j['job_no'] }}</td>
-                                        <td>
-                                            @if (!empty($j['is_oldest']))
-                                                <span class="label label-primary">OLDER</span>
-                                            @else
-                                                <span class="label label-default">newer</span>
-                                            @endif
-                                        </td>
-                                        <td>{{ Str::limit($j['company'], 26) }}</td>
-                                        <td>{{ Str::limit($j['title'], 46) }}</td>
-                                        <td style="font-size:11px">{{ Str::limit($j['address'], 32) }}</td>
-                                        <td style="white-space:nowrap">{{ $j['created'] ? date('d M Y', strtotime($j['created'])) : '—' }}</td>
-                                        <td style="white-space:nowrap">{{ $j['delete_at'] ? date('d M Y', strtotime($j['delete_at'])) : '—' }}</td>
-                                        <td>
-                                            @if ($j['matches_page'])
-                                                <span class="label label-success">YES</span>
-                                            @else
-                                                <span class="text-muted">no</span>
-                                            @endif
-                                        </td>
-                                        <td>
-                                            <a href="{{ url('admin/jobs/'.$j['job_no'].'/edit') }}" target="_blank"
-                                               class="btn btn-xs btn-default">Open job</a>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="panel-footer">
-                        @if ($g['verdict'] === 'same')
-                            @php $n = count($g['jobs']); @endphp
-                            <form method="POST" action="{{ route('admin.analytics.link-check.group-action') }}" style="display:inline">
-                                @csrf
-                                <input type="hidden" name="final_url" value="{{ $g['final'] }}">
-                                <input type="hidden" name="job_nos" value="{{ $g['job_nos'] }}">
-                                <button type="submit" name="action" value="keep_older" class="btn btn-sm btn-primary"
-                                        onclick="return confirm('Keep the OLDEST job and trash the other {{ $n - 1 }}?');">
-                                    Keep older (trash {{ $n - 1 }})
-                                </button>
-                                <button type="submit" name="action" value="keep_newer" class="btn btn-sm btn-default"
-                                        onclick="return confirm('Keep the NEWEST job and trash the other {{ $n - 1 }}?');">
-                                    Keep newer (trash {{ $n - 1 }})
-                                </button>
-                                <button type="submit" name="action" value="not_duplicate" class="btn btn-sm btn-link"
-                                        onclick="return confirm('Mark as NOT a duplicate? This group will not be shown again.');">
-                                    Not a duplicate
-                                </button>
-                            </form>
-                        @else
-                            <form method="POST" action="{{ route('admin.analytics.link-check.group-action') }}" style="display:inline">
-                                @csrf
-                                <input type="hidden" name="final_url" value="{{ $g['final'] }}">
-                                <input type="hidden" name="job_nos" value="{{ $g['job_nos'] }}">
-                                <button type="submit" name="action" value="not_duplicate" class="btn btn-sm btn-default"
-                                        onclick="return confirm('Mark as NOT a duplicate? This group will not be shown again.');">
-                                    Not a duplicate — stop showing this
-                                </button>
-                            </form>
-                            <span class="text-muted" style="margin-left:10px">
-                                Keep/trash is deliberately unavailable: these are different jobs.
-                            </span>
-                        @endif
-                    </div>
-                </div>
-            </div>
-        </div>
+            @include('admin.analytics.partials.group-card', ['g' => $g, 'showDone' => false])
         @endforeach
         @endif
 
@@ -297,43 +196,7 @@
                             <thead><tr><th>Job</th><th>Result</th><th>Title</th><th>Link / note</th><th>Actions</th></tr></thead>
                             <tbody>
                             @foreach ($preview['review'] as $r)
-                                <tr @if ($r['class'] === 'WRONG_TARGET') class="danger" @endif>
-                                    <td>{{ $r['job_no'] }}</td>
-                                    <td>
-                                        <span class="label label-{{ $r['class'] === 'WRONG_TARGET' ? 'danger' : 'default' }}">{{ $r['class'] }}</span>
-                                        <br><small class="text-muted">status {{ $r['status'] }}</small>
-                                    </td>
-                                    <td style="max-width: 260px">
-                                        {{ Str::limit($r['title'], 58) }}
-                                        <br><small class="text-muted">{{ Str::limit($r['company'] ?? '', 30) }}</small>
-                                    </td>
-                                    <td style="font-size: 11px; word-break: break-all">
-                                        <a href="{{ $r['url'] }}" target="_blank" rel="noopener nofollow">{{ $r['url'] }}</a>
-                                        @if ($r['class'] === 'WRONG_TARGET' && !empty($r['final_url']))
-                                            <br><span class="text-danger">redirects to {{ $r['final_url'] }}</span>
-                                            @if (!empty($r['page_title']))
-                                                <br><em class="text-muted">{{ Str::limit($r['page_title'], 90) }}</em>
-                                            @endif
-                                        @endif
-                                        @if (!empty($r['note']))<br><em class="text-muted">{{ $r['note'] }}</em>@endif
-                                    </td>
-                                    <td style="white-space:nowrap">
-                                        @if ($r['status'] === 3)
-                                            <form method="POST" action="{{ route('admin.analytics.link-check.row-action') }}" style="display:inline">
-                                                @csrf
-                                                <input type="hidden" name="job_no" value="{{ $r['job_no'] }}">
-                                                <input type="hidden" name="current_link" value="{{ $r['current_link'] }}">
-                                                <button type="submit" name="action" value="expire" class="btn btn-xs btn-danger"
-                                                        onclick="return confirm('Expire job {{ $r['job_no'] }}? It stops being listed.');">Expire</button>
-                                                <button type="submit" name="action" value="extend" class="btn btn-xs btn-success"
-                                                        onclick="return confirm('Give job {{ $r['job_no'] }} another 7 days?');">Extend 7d</button>
-                                            </form>
-                                        @else
-                                            <span class="text-muted">—</span>
-                                        @endif
-                                        <a href="{{ url('admin/jobs/'.$r['job_no'].'/edit') }}" target="_blank" class="btn btn-xs btn-default">Open job</a>
-                                    </td>
-                                </tr>
+                                @include('admin.analytics.partials.review-row', ['r' => $r, 'showDone' => false])
                             @endforeach
                             </tbody>
                         </table>
@@ -374,6 +237,73 @@
 
     @endif
 
+    {{-- ── Open items: work saved from earlier uploads ── --}}
+    @if ($open && ($open['counts']['groups'] > 0 || $open['counts']['review'] > 0))
+        @php $o = $open['counts']; @endphp
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="panel panel-primary">
+                    <div class="panel-heading">
+                        <i class="fa fa-inbox"></i> Open items — saved from earlier uploads
+                    </div>
+                    <div class="panel-body">
+                        <strong>{{ number_format($o['review']) }}</strong> job(s) for review
+                        and <strong>{{ number_format($o['groups']) }}</strong> duplicate group(s)
+                        covering {{ number_format($o['groupJobs']) }} job(s).
+                        @if ($o['groupsDiff'] > 0)
+                            <span class="text-danger">{{ $o['groupsDiff'] }} of the groups are <strong>different jobs</strong>, not duplicates.</span>
+                        @endif
+                        <br><span class="text-muted">Items disappear automatically once the job is retired, relinked or the group stops being a duplicate.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if ($o['review'] > 0)
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="panel panel-warning">
+                    <div class="panel-heading"><i class="fa fa-exclamation-triangle"></i> For review — {{ $o['review'] }} job(s)</div>
+                    <div class="table-responsive" style="max-height: 420px; overflow: auto">
+                        <table class="table table-condensed table-striped" style="margin-bottom: 0">
+                            <thead><tr><th>Job</th><th>Result</th><th>Title</th><th>Link / note</th><th>Actions</th></tr></thead>
+                            <tbody>
+                            @foreach ($open['review'] as $r)
+                                @include('admin.analytics.partials.review-row', ['r' => $r, 'showDone' => true])
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
+
+        @if ($o['groups'] > 0)
+        <div class="row">
+            <div class="col-lg-12">
+                <h4 style="margin-bottom:10px">
+                    <i class="fa fa-clone"></i> Same final offer — {{ $o['groups'] }} group(s), {{ $o['groupJobs'] }} job(s)
+                    @if ($o['capped'])
+                        <small class="text-muted">showing the first {{ $o['shown'] }}</small>
+                        <a href="{{ route('admin.analytics.link-check', ['all' => 1]) }}" class="btn btn-xs btn-default">Show all {{ $o['groups'] }}</a>
+                    @endif
+                </h4>
+            </div>
+        </div>
+        @foreach ($open['groups'] as $g)
+            @include('admin.analytics.partials.group-card', ['g' => $g, 'showDone' => true])
+        @endforeach
+        @if ($o['capped'])
+        <div class="row"><div class="col-lg-12" style="margin-bottom:15px">
+            <a href="{{ route('admin.analytics.link-check', ['all' => 1]) }}" class="btn btn-default">
+                Show all {{ $o['groups'] }} groups
+            </a>
+        </div></div>
+        @endif
+        @endif
+    @endif
+
     {{-- ── Recent runs ── --}}
     @if (!empty($recent))
     <div class="row">
@@ -382,11 +312,16 @@
                 <div class="panel-heading"><i class="fa fa-history"></i> Recent link-check runs</div>
                 <div class="table-responsive">
                     <table class="table table-condensed" style="margin-bottom: 0">
-                        <thead><tr><th>Batch</th><th>By</th><th>Jobs</th><th>When</th></tr></thead>
+                        <thead><tr><th>Batch</th><th>Type</th><th>By</th><th>Jobs</th><th>When</th></tr></thead>
                         <tbody>
                         @foreach ($recent as $b)
                             <tr>
-                                <td>{{ $b->batch }}</td>
+                                <td>
+                                    <a href="{{ route('admin.analytics.link-check.batch', ['batch' => $b->batch]) }}">
+                                        {{ $b->batch }}
+                                    </a>
+                                </td>
+                                <td><span class="label label-{{ ($b->source ?? '') === 'bulk-expire' ? 'danger' : 'default' }}">{{ $b->source ?? 'link-check' }}</span></td>
                                 <td>{{ $b->actor }}</td>
                                 <td>{{ $b->n }}</td>
                                 <td>{{ $b->at ? date('d M Y, H:i', strtotime($b->at)) : '' }}</td>
