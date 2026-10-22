@@ -79,6 +79,11 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('analytics/duplicates/bulk-dismiss', [Admin\AnalyticsController::class, 'bulkDismiss'])->name('admin.analytics.duplicates.bulk-dismiss');
     Route::post('analytics/duplicates/undismiss', [Admin\AnalyticsController::class, 'undismissGroup'])->name('admin.analytics.duplicates.undismiss');
 
+    // Link check: upload the Mac-side scan results, extend jobs still live.
+    Route::get('analytics/link-check', [Admin\LinkCheckController::class, 'index'])->name('admin.analytics.link-check');
+    Route::post('analytics/link-check/preview', [Admin\LinkCheckController::class, 'preview'])->name('admin.analytics.link-check.preview');
+    Route::post('analytics/link-check/apply', [Admin\LinkCheckController::class, 'apply'])->name('admin.analytics.link-check.apply');
+
     // Jobs
     Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');
     Route::post('jobs/create-from-xml/upload-file', [Admin\CreateJobFromXmlController::class, 'uploadFile'])->name('admin.jobs.create-from-xml.upload');

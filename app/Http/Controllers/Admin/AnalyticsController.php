@@ -12,7 +12,9 @@ use Illuminate\Support\Str;
 
 class AnalyticsController extends Controller
 {
-    private const SUPER_ADMIN_EMAIL = 'ahmedsa@admin.com';
+    // public so sibling admin controllers gate on the SAME value — duplicating
+    // an authorization constant is how one copy quietly drifts open.
+    public const SUPER_ADMIN_EMAIL = 'ahmedsa@admin.com';
 
     private function authorizeSuperAdmin()
     {
