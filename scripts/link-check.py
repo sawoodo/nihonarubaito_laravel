@@ -39,17 +39,80 @@ USAGE
 """
 
 import argparse
+import atexit
 import csv
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
+
+# ---------------------------------------------------------------------------
+# TLS trust
+#
+# 2026-10-22: shigotoin rotated onto a Let's Encrypt chain anchored in
+# "ISRG Root YR", which is newer than every CA bundle on this machine (system
+# 2025-11, homebrew 2026-01, anaconda 2022, certifi 2022). Every fetch started
+# failing with curl exit 60, unknown CA. Not a block -- google, ipinfo and
+# baitoru all verified fine at the same moment.
+#
+# Fix: Let's Encrypt publishes Root YR CROSS-SIGNED by ISRG Root X1, which the
+# system already trusts. We append only that one certificate to the system
+# roots, so trust stays anchored in X1 rather than in a new root taken on faith.
+#
+#   leaf *.shigotoin.com -> ISRG YR2 -> Root YR (cross-signed by X1) -> X1 ✓
+#
+# NEVER add --insecure/-k here. This scan's verdicts drive expiry writes: with
+# verification off, anything able to intercept the connection could serve a
+# fake 「掲載終了」 and we would retire live jobs.
+# ---------------------------------------------------------------------------
+CA_EXTRA = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "ca", "letsencrypt-root-yr-x1.pem")
+
+SYSTEM_CA_CANDIDATES = [
+    "/etc/ssl/cert.pem",                              # macOS
+    "/opt/homebrew/etc/ca-certificates/cert.pem",     # homebrew (arm)
+    "/usr/local/etc/ca-certificates/cert.pem",        # homebrew (intel)
+    "/etc/ssl/certs/ca-certificates.crt",             # debian/ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",               # rhel
+]
+
+_ca_bundle = None
+
+
+def ca_bundle():
+    """
+    system roots + the cross-signed Root YR, written once to a temp file.
+    Returns the path. Exits rather than continuing unverified.
+    """
+    global _ca_bundle
+    if _ca_bundle:
+        return _ca_bundle
+
+    base = next((p for p in SYSTEM_CA_CANDIDATES if os.path.isfile(p)), None)
+    if not base:
+        sys.exit("FATAL: no system CA bundle found. Refusing to run without "
+                 "certificate verification.")
+    if not os.path.isfile(CA_EXTRA):
+        sys.exit(f"FATAL: {CA_EXTRA} is missing. Refusing to run without it — "
+                 "shigotoin's chain will not verify and every fetch would ERROR.")
+
+    fh = tempfile.NamedTemporaryFile("wb", suffix=".pem", delete=False)
+    for src in (base, CA_EXTRA):
+        with open(src, "rb") as f:
+            fh.write(f.read())
+            fh.write(b"\n")
+    fh.close()
+    atexit.register(lambda p=fh.name: os.path.exists(p) and os.unlink(p))
+    _ca_bundle = fh.name
+    print(f"TLS: {base} + {os.path.basename(CA_EXTRA)}")
+    return _ca_bundle
 
 # Phrases that appear ONLY on a closed listing. Verified against a known-closed
 # page on 2026-10-21: "この求人の募集は終了しました。表示中の求人は掲載終了しています。"
@@ -99,7 +162,8 @@ def check_jp():
     """Return (ok, country, org). Abort the run unless country == JP."""
     try:
         r = subprocess.run(
-            ["curl", "-s", "--max-time", "20", "https://ipinfo.io/json"],
+            ["curl", "-s", "--max-time", "20", "--cacert", ca_bundle(),
+             "https://ipinfo.io/json"],
             capture_output=True, text=True, check=False)
         d = json.loads(r.stdout)
         return d.get("country") == "JP", d.get("country", "?"), d.get("org", "?")
@@ -112,6 +176,7 @@ def fetch(url, timeout=40):
     try:
         r = subprocess.run([
             "curl", "-sL", "--max-time", str(timeout), "-A", UA,
+            "--cacert", ca_bundle(),
             "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "-H", "Accept-Language: ja,en-US;q=0.9,en;q=0.8",
             "--compressed",
