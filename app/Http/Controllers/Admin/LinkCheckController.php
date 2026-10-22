@@ -532,6 +532,14 @@ class LinkCheckController extends Controller
             if (! in_array($r['classification'], self::ACTIONABLE, true)) {
                 continue;
             }
+            // Only live jobs can be duplicates of each other. A retired job
+            // counted here would appear in its group card AND in the skipped
+            // count, so the preview totals exceeded the row count -- and the
+            // card would offer a keep/trash the guards then refuse anyway.
+            $job = $jobs[$jobNo] ?? null;
+            if (! $job || (int) $job->job_status_id !== Job::STATUS_PUBLISHED) {
+                continue;
+            }
             $final = trim((string) $r['final_url']);
             if ($final !== '') {
                 $finalMembers[$final][] = $jobNo;
