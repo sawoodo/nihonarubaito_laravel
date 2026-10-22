@@ -89,6 +89,9 @@
                                 @endif
                             </li>
                             <li><strong>{{ number_format($c['notPublished']) }}</strong> no longer Published — skipped</li>
+                            @if ($c['alreadyApplied'] > 0)
+                                <li><strong>{{ number_format($c['alreadyApplied']) }}</strong> already extended from this scan result (or a newer one) — skipped, so re-uploading the same file changes nothing</li>
+                            @endif
                             <li><strong>{{ number_format($c['notFound']) }}</strong> not found in the database — skipped</li>
                         </ul>
                     </div>
@@ -340,6 +343,36 @@
         </div>
         @endif
     @endif
+
+        {{-- ── Already applied ── --}}
+        @if ($c['alreadyApplied'] > 0)
+        <div class="row">
+            <div class="col-lg-12">
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <i class="fa fa-check-circle-o"></i>
+                        Already extended from this scan — {{ number_format($c['alreadyApplied']) }} job(s), nothing to do
+                    </div>
+                    <div class="table-responsive" style="max-height: 300px; overflow: auto">
+                        <table class="table table-condensed table-striped" style="margin-bottom: 0">
+                            <thead><tr><th>Job</th><th>Result</th><th>Title</th><th>Scan checked</th><th>Already applied</th></tr></thead>
+                            <tbody>
+                            @foreach ($preview['alreadyApplied'] as $r)
+                                <tr>
+                                    <td>{{ $r['job_no'] }}</td>
+                                    <td><span class="label label-default">{{ $r['class'] }}</span></td>
+                                    <td>{{ Str::limit($r['title'], 60) }}</td>
+                                    <td style="white-space:nowrap">{{ $r['checked_at'] }}</td>
+                                    <td style="white-space:nowrap">{{ $r['applied_at'] }}</td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endif
 
     {{-- ── Recent runs ── --}}
     @if (!empty($recent))

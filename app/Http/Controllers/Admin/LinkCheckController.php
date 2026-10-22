@@ -161,7 +161,8 @@ class LinkCheckController extends Controller
                     $row['old_delete_at'], $row['new_delete_at'], 'link-check', $actor, $batch,
                     $row['class'] === 'MOVED'
                         ? 'still live at a new offer id; link rewritten, delete_at +' . self::EXTEND_DAYS
-                        : 'confirmed still live; delete_at +' . self::EXTEND_DAYS);
+                        : 'confirmed still live; delete_at +' . self::EXTEND_DAYS,
+                    $row['checked_at']);
 
                 if ($row['new_link'] !== $row['current_link']) {
                     $relinked++;
@@ -390,21 +391,54 @@ class LinkCheckController extends Controller
         }
     }
 
+    /**
+     * @param  ?string  $sourceCheckedAt  when the scan result behind this change
+     *   was observed. Stored so a re-upload of the same results file becomes a
+     *   no-op; null for manual actions, which have no scan behind them.
+     */
     private function logStatusChange(string $jobNo, ?int $old, ?int $new, $oldDeleteAt, $newDeleteAt,
-                                     string $source, string $actor, string $batch, string $reason): void
+                                     string $source, string $actor, string $batch, string $reason,
+                                     ?string $sourceCheckedAt = null): void
     {
         DB::table('job_status_history')->insert([
-            'job_no'        => $jobNo,
-            'old_status'    => $old,
-            'new_status'    => $new,
-            'old_delete_at' => $oldDeleteAt,
-            'new_delete_at' => $newDeleteAt,
-            'source'        => $source,
-            'actor'         => $actor,
-            'reason'        => $reason,
-            'batch'         => $batch,
-            'created_at'    => now(),
+            'job_no'            => $jobNo,
+            'old_status'        => $old,
+            'new_status'        => $new,
+            'old_delete_at'     => $oldDeleteAt,
+            'new_delete_at'     => $newDeleteAt,
+            'source'            => $source,
+            'actor'             => $actor,
+            'reason'            => $reason,
+            'batch'             => $batch,
+            'source_checked_at' => $sourceCheckedAt,
+            'created_at'        => now(),
         ]);
+    }
+
+    /**
+     * Newest scan timestamp already applied per job, so the planner can skip a
+     * result it has seen before. Wrapped: the column arrives in a migration and
+     * a missing column must not take the page down.
+     *
+     * @return array<string,string> job_no => 'Y-m-d H:i:s'
+     */
+    private function lastAppliedCheckedAt(array $jobNos): array
+    {
+        if (! $jobNos) {
+            return [];
+        }
+        try {
+            return DB::table('job_status_history')
+                ->whereIn('job_no', $jobNos)
+                ->where('source', 'link-check')
+                ->whereNotNull('source_checked_at')
+                ->groupBy('job_no')
+                ->pluck(DB::raw('MAX(source_checked_at)'), 'job_no')
+                ->toArray();
+        } catch (\Throwable $e) {
+            Log::error('link-check: could not read source_checked_at', ['error' => $e->getMessage()]);
+            return [];
+        }
     }
 
     /**
@@ -471,6 +505,7 @@ class LinkCheckController extends Controller
             ->keyBy('job_no');
 
         $dismissed = DB::table('dismissed_duplicates')->pluck('group_hash')->flip();
+        $lastApplied = $this->lastAppliedCheckedAt(array_keys($byJobNo));
 
         // A MOVED row is only actionable if the destination really is our job.
         $wrongTarget = [];
@@ -521,7 +556,7 @@ class LinkCheckController extends Controller
         usort($groups, fn ($a, $b) => [$a['verdict'] === 'same', -count($a['jobs'])]
                                    <=> [$b['verdict'] === 'same', -count($b['jobs'])]);
 
-        $apply = $review = $notFound = $notPublished = [];
+        $apply = $review = $notFound = $notPublished = $alreadyApplied = [];
 
         foreach ($byJobNo as $jobNo => $r) {
             $class = $r['classification'];
@@ -554,6 +589,24 @@ class LinkCheckController extends Controller
                 continue;
             }
 
+            $checkedAt = ! empty($r['checked_at']) ? date('Y-m-d H:i:s', strtotime($r['checked_at'])) : null;
+
+            // Already acted on this scan result (or a newer one). Re-uploading
+            // the same file must not stack another +7 days: MOVED rows are
+            // protected by the apply_link guard, OPEN rows are not.
+            if ($checkedAt !== null
+                && isset($lastApplied[$jobNo])
+                && strtotime((string) $lastApplied[$jobNo]) >= strtotime($checkedAt)) {
+                $alreadyApplied[] = [
+                    'job_no'      => $jobNo,
+                    'class'       => $class,
+                    'title'       => $job->title,
+                    'applied_at'  => $lastApplied[$jobNo],
+                    'checked_at'  => $checkedAt,
+                ];
+                continue;
+            }
+
             $final = trim((string) $r['final_url']);
             $old = $job->delete_at;
             $base = $old ? strtotime($old) : time();
@@ -568,7 +621,7 @@ class LinkCheckController extends Controller
                 'new_delete_at' => date('Y-m-d H:i:s', $base + self::EXTEND_DAYS * 86400),
                 'http_code'     => $r['http_code'] ?? null,
                 'num_redirects' => is_numeric($r['num_redirects'] ?? null) ? (int) $r['num_redirects'] : null,
-                'checked_at'    => ! empty($r['checked_at']) ? date('Y-m-d H:i:s', strtotime($r['checked_at'])) : null,
+                'checked_at'    => $checkedAt,
             ];
         }
 
@@ -577,11 +630,12 @@ class LinkCheckController extends Controller
         $groupJobCount = array_sum(array_map(fn ($g) => count($g['jobs']), $groups));
 
         return [
-            'apply'        => $apply,
-            'review'       => $review,
-            'groups'       => $groups,
-            'notFound'     => $notFound,
-            'notPublished' => $notPublished,
+            'apply'          => $apply,
+            'review'         => $review,
+            'groups'         => $groups,
+            'notFound'       => $notFound,
+            'notPublished'   => $notPublished,
+            'alreadyApplied' => $alreadyApplied,
             'counts'       => [
                 'rows'         => count($byJobNo),
                 'apply'        => count($apply),
@@ -594,6 +648,7 @@ class LinkCheckController extends Controller
                 'groupsDiff'   => count(array_filter($groups, fn ($g) => $g['verdict'] !== 'same')),
                 'notFound'     => count($notFound),
                 'notPublished' => count($notPublished),
+                'alreadyApplied' => count($alreadyApplied),
             ],
         ];
     }
@@ -698,6 +753,7 @@ class LinkCheckController extends Controller
             'review=' . $plan['counts']['review'],
             'wrong_target=' . $plan['counts']['wrongTarget'],
             'groups=' . $plan['counts']['groups'],
+            'already_applied=' . $plan['counts']['alreadyApplied'],
         ]) . "\n";
 
         foreach ($plan['apply'] as $row) {
