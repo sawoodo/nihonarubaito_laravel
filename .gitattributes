@@ -6,6 +6,26 @@
 *.md diff=markdown
 *.php diff=php
 
+# Binary assets: never line-ending-normalised, never diffed as text.
+# `* text=auto` already auto-detects these, but spelling them out means a new
+# asset can't be misdetected — the image library rollout will add many.
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.svgz  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.sql.gz binary
+
 /.github export-ignore
 CHANGELOG.md export-ignore
 .styleci.yml export-ignore

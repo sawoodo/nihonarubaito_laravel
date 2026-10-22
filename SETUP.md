@@ -68,6 +68,11 @@ ssh nihonarubaito 'whoami'
 
 ## 2. Every work session (any machine)
 
+0. **Run `/session-start` in Claude Code first** (Mac or Windows). It is read-only
+   until you approve: it reports branch, what's unpushed, what's uncommitted, any
+   stash, and whether the remote URL is clean — then waits. On the **Windows PC in
+   particular, run it and pull before any work**; that machine is the one most
+   likely to be behind.
 1. **`git pull` before touching anything.** This stops machines from overwriting each other.
 2. Do the work.
 3. **Commit and push before deploying.** Always.
@@ -108,6 +113,30 @@ Read the file with `php -r`, as above, rather than asking the app through `artis
 - **Never leave uncommitted work behind.** Commit and push before you walk away. Uncommitted work on one machine is invisible to the other.
 - On the machine you switch to, **`git pull` first**.
 - If `git pull` reports a conflict, stop and resolve it before doing anything else. Don't deploy from a conflicted tree.
+
+### Line endings: a drift alarm that isn't drift
+
+A file can hash differently on the server while its **content is identical** — the
+server copy is CRLF and git is LF. Seen 2026-10-22 on three analytics views
+uploaded 2026-02-13.
+
+`.gitattributes` has carried `* text=auto eol=lf` since 2026-02-09 and
+`git add --renormalize .` is a no-op, so **git was never the source**. The usual
+cause is the transfer: an FTP/SFTP client in ASCII/Auto mode rewrites LF to CRLF
+in flight. `scp` does not. Keep any GUI client in **binary/raw** mode.
+
+Before assuming you are about to overwrite real work, check whether it's only
+line endings:
+
+```bash
+# fetch the server copy, then compare content with line endings normalised
+tr -d '\r' < server_copy.php | md5 -q      # Mac (Linux/Git Bash: md5sum)
+tr -d '\r' < local_copy.php  | md5 -q
+```
+
+Equal hashes means identical content — safe to deploy. A byte delta of exactly
++1 per line is the CRLF signature. Unequal means **stop**: that is real
+uncommitted production code.
 
 ## 4. Drift check: git vs production
 
