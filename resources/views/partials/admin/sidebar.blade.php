@@ -28,6 +28,11 @@
                 </a>
             </li>
             <li>
+                <a href="{{ url('admin/analytics/link-check') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'link_check' ? 'class="active"' : '' !!}>
+                    <i class="fa fa-link fa-2x fa-fw tw-text-blue-500"></i> Link Check
+                </a>
+            </li>
+            <li>
                 <a href="{{ url('admin/analytics/duplicates') }}" {!! isset($activeSideMenu) && $activeSideMenu === 'duplicates' ? 'class="active"' : '' !!}>
                     <i class="fa fa-clone fa-2x fa-fw tw-text-orange-500"></i> Duplicates
                     @if (isset($highDuplicateCount) && $highDuplicateCount > 0)

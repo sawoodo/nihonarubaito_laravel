@@ -12,7 +12,14 @@ class AdminMiddleware
         $user = session('user');
 
         if (!session('loggedin') || !$user) {
-            return redirect('/admin/login');
+            // guest() stashes the URL being requested in the session as
+            // `url.intended`, so AuthController can send the user back to the
+            // page they actually wanted instead of always to /admin/jobs.
+            // Only GETs are remembered — replaying a POST after login would
+            // re-submit a form the user never saw the result of.
+            return $request->isMethod('get')
+                ? redirect()->guest('/admin/login')
+                : redirect('/admin/login');
         }
 
         if (!$user->isBackendUser()) {

@@ -3,7 +3,8 @@
 @section('title', 'Link Check')
 
 @section('content')
-<div id="page-wrapper" style="min-height: 800px">
+{{-- layouts.admin already opens #page-wrapper (margin-left:250px at >=768px).
+     Opening a second one here nests the rule and indents the page by 500px. --}}
 
     {{-- ── Page Header ── --}}
     <div class="row">
@@ -19,12 +20,16 @@
         </div>
     </div>
 
-    @if (session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
-    @endif
-    @if (session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
-    @endif
+    <div class="row">
+        <div class="col-lg-12">
+            @if (session('success'))
+                <div class="alert alert-success">{{ session('success') }}</div>
+            @endif
+            @if (session('error'))
+                <div class="alert alert-danger">{{ session('error') }}</div>
+            @endif
+        </div>
+    </div>
 
     {{-- ── Upload ── --}}
     <div class="row">
@@ -225,5 +230,4 @@
     </div>
     @endif
 
-</div>
 @endsection

@@ -32,7 +32,9 @@ class AuthController extends Controller
                     'user'      => $user,
                     'member_id' => $user->id,
                 ]);
-                return redirect('/admin/jobs');
+                // Back to the page they originally asked for; /admin/jobs
+                // stays the default when there was no intended URL.
+                return redirect()->intended('/admin/jobs');
             }
 
             $authFailed = true;
