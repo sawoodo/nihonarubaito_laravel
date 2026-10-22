@@ -3,7 +3,8 @@
 @section('title', 'Employee Performance')
 
 @section('content')
-<div id="page-wrapper" style="min-height: 800px">
+{{-- layouts.admin already opens #page-wrapper (margin-left:250px at >=768px).
+     A second one here nests the rule and indents the page by 500px. --}}
 
     {{-- Page Header --}}
     <div class="row">
@@ -342,7 +343,6 @@
     </div>
     @endforeach
 
-</div>
 @endsection
 
 @push('page-scripts')

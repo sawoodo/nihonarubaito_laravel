@@ -3,7 +3,8 @@
 @section('title', 'Duplicate Jobs Review')
 
 @section('content')
-<div id="page-wrapper" style="min-height: 800px">
+{{-- layouts.admin already opens #page-wrapper (margin-left:250px at >=768px).
+     A second one here nests the rule and indents the page by 500px. --}}
 
     {{-- Page Header --}}
     <div class="row">
@@ -275,7 +276,6 @@
 
     </div>{{-- /tab-content --}}
 
-</div>
 
 {{-- Toast --}}
 <div id="toast" style="display:none;position:fixed;bottom:30px;right:30px;z-index:9999;padding:12px 24px;border-radius:6px;color:#fff;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.2);min-width:250px"></div>
