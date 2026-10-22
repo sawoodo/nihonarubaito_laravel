@@ -342,8 +342,6 @@
             </div>
         </div>
         @endif
-    @endif
-
         {{-- ── Already applied ── --}}
         @if ($c['alreadyApplied'] > 0)
         <div class="row">
@@ -373,6 +371,8 @@
             </div>
         </div>
         @endif
+
+    @endif
 
     {{-- ── Recent runs ── --}}
     @if (!empty($recent))
