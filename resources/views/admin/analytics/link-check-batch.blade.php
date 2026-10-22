@@ -1,3 +1,4 @@
+@php use App\Support\Tz; @endphp
 @extends('layouts.admin')
 
 @section('title', 'Link Check — batch')
@@ -23,7 +24,7 @@
                     <p style="margin-bottom:6px">
                         <span class="label label-{{ $summary['source'] === 'bulk-expire' ? 'danger' : 'default' }}">{{ $summary['source'] }}</span>
                         by <strong>{{ $summary['actor'] }}</strong>
-                        @if ($summary['at']) on {{ date('d M Y, H:i', strtotime($summary['at'])) }} @endif
+                        @if ($summary['at']) on {{ Tz::pkt($summary['at']) }} @endif
                     </p>
                     <ul style="margin-bottom:0">
                         <li><strong>{{ number_format($summary['rows']) }}</strong> job(s) changed</li>
@@ -79,7 +80,7 @@
                     <table class="table table-condensed table-striped" style="margin-bottom:0">
                         <thead><tr>
                             <th>Job</th><th>Title</th><th>Status</th><th>delete_at</th>
-                            <th>Now</th><th>Reason</th><th>Scan checked</th>
+                            <th>Now</th><th>Reason</th><th>Scan checked (PKT)</th>
                         </tr></thead>
                         <tbody>
                         @foreach ($status as $h)
@@ -106,7 +107,7 @@
                                 <td>{{ $h->job_status_id ?? '—' }}</td>
                                 <td style="font-size:11px">{{ Str::limit($h->reason, 60) }}</td>
                                 <td style="font-size:11px; white-space:nowrap">
-                                    {{ $h->source_checked_at ? date('d M H:i', strtotime($h->source_checked_at)) : '—' }}
+                                    {{ Tz::pkt($h->source_checked_at, 'd M, H:i') }}
                                 </td>
                             </tr>
                         @endforeach

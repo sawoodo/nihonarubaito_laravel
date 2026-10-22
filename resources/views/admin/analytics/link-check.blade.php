@@ -1,3 +1,4 @@
+@php use App\Support\Tz; @endphp
 @extends('layouts.admin')
 
 @section('title', 'Link Check')
@@ -68,7 +69,7 @@
                             <i class="fa fa-file-text-o"></i>
                             <strong>{{ $preview['file_name'] }}</strong>
                             — {{ number_format($c['rows']) }} job(s)
-                            @if (!empty($preview['uploaded_at'])) · uploaded {{ $preview['uploaded_at'] }} @endif
+                            @if (!empty($preview['uploaded_at'])) · uploaded {{ Tz::pkt($preview['uploaded_at']) }} @endif
                         </p>
                         <p>
                             <strong>{{ number_format($c['rows']) }}</strong> job(s) in the file.
@@ -216,15 +217,15 @@
                     </div>
                     <div class="table-responsive" style="max-height: 300px; overflow: auto">
                         <table class="table table-condensed table-striped" style="margin-bottom: 0">
-                            <thead><tr><th>Job</th><th>Result</th><th>Title</th><th>Scan checked</th><th>Already applied</th></tr></thead>
+                            <thead><tr><th>Job</th><th>Result</th><th>Title</th><th>Scan checked (PKT)</th><th>Already applied (PKT)</th></tr></thead>
                             <tbody>
                             @foreach ($preview['alreadyApplied'] as $r)
                                 <tr>
                                     <td>{{ $r['job_no'] }}</td>
                                     <td><span class="label label-default">{{ $r['class'] }}</span></td>
                                     <td>{{ Str::limit($r['title'], 60) }}</td>
-                                    <td style="white-space:nowrap">{{ $r['checked_at'] }}</td>
-                                    <td style="white-space:nowrap">{{ $r['applied_at'] }}</td>
+                                    <td style="white-space:nowrap">{{ Tz::pkt($r['checked_at'], 'd M, H:i') }}</td>
+                                    <td style="white-space:nowrap">{{ Tz::pkt($r['applied_at'], 'd M, H:i') }}</td>
                                 </tr>
                             @endforeach
                             </tbody>
@@ -312,7 +313,7 @@
                 <div class="panel-heading"><i class="fa fa-history"></i> Recent link-check runs</div>
                 <div class="table-responsive">
                     <table class="table table-condensed" style="margin-bottom: 0">
-                        <thead><tr><th>Batch</th><th>Type</th><th>By</th><th>Jobs</th><th>When</th></tr></thead>
+                        <thead><tr><th>Batch</th><th>Type</th><th>By</th><th>Jobs</th><th>When (PKT)</th></tr></thead>
                         <tbody>
                         @foreach ($recent as $b)
                             <tr>
@@ -324,7 +325,7 @@
                                 <td><span class="label label-{{ ($b->source ?? '') === 'bulk-expire' ? 'danger' : 'default' }}">{{ $b->source ?? 'link-check' }}</span></td>
                                 <td>{{ $b->actor }}</td>
                                 <td>{{ $b->n }}</td>
-                                <td>{{ $b->at ? date('d M Y, H:i', strtotime($b->at)) : '' }}</td>
+                                <td style="white-space:nowrap">{{ Tz::pkt($b->at, 'd M Y, H:i', '') }}</td>
                             </tr>
                         @endforeach
                         </tbody>

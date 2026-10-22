@@ -374,7 +374,8 @@ class LinkCheckController extends Controller
             'preview'        => $plan + [
                 'token'       => $token,
                 'file_name'   => is_file($nameFile) ? file_get_contents($nameFile) : 'uploaded.csv',
-                'uploaded_at' => is_file($csv) ? date('d M Y, H:i', filemtime($csv)) : '',
+                // raw unix mtime; the view formats it in the reader's timezone
+                'uploaded_at' => is_file($csv) ? filemtime($csv) : null,
             ],
             'recent'         => $this->recentBatches(),
         ]);
