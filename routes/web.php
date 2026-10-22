@@ -83,6 +83,9 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('analytics/link-check', [Admin\LinkCheckController::class, 'index'])->name('admin.analytics.link-check');
     Route::post('analytics/link-check/preview', [Admin\LinkCheckController::class, 'preview'])->name('admin.analytics.link-check.preview');
     Route::post('analytics/link-check/apply', [Admin\LinkCheckController::class, 'apply'])->name('admin.analytics.link-check.apply');
+    Route::post('analytics/link-check/cancel', [Admin\LinkCheckController::class, 'cancel'])->name('admin.analytics.link-check.cancel');
+    Route::post('analytics/link-check/group-action', [Admin\LinkCheckController::class, 'groupAction'])->name('admin.analytics.link-check.group-action');
+    Route::post('analytics/link-check/row-action', [Admin\LinkCheckController::class, 'rowAction'])->name('admin.analytics.link-check.row-action');
 
     // Jobs
     Route::match(['get', 'post'], 'jobs/create-from-xml', [Admin\CreateJobFromXmlController::class, 'create'])->name('admin.jobs.create-from-xml');

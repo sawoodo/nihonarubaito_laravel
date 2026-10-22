@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Job;
+use App\Services\MovedTargetMatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,26 +18,29 @@ use Illuminate\Support\Str;
  * page is how that CSV gets back into the database.
  *
  * WHY A CSV AND NOT AN ENDPOINT THE SCRIPT POSTS TO
- * AdminMiddleware is session-only (session('loggedin') + isBackendUser()); there
- * is no routes/api.php and no token auth. A machine-callable endpoint would mean
- * inventing a token scheme, storing a secret on the Mac and adding a CSRF
- * exception -- new public write surface on a site that had two exposure
- * incidents in October. An upload costs one click and adds none.
+ * AdminMiddleware is session-only; there is no routes/api.php and no token
+ * auth. A machine-callable endpoint would mean inventing a token scheme,
+ * storing a secret on the Mac and adding a CSRF exception -- new public write
+ * surface. An upload costs one click and adds none.
  *
  * WHAT IT WILL AND WILL NOT DO
- *   OPEN   -> delete_at += 7. The job is still live; keep it listed.
- *   MOVED  -> apply_link rewritten to the resolved final URL, old value kept in
- *             job_apply_link_history, delete_at += 7.
- *   CLOSED / GONE / ERROR -> listed for staff, NEVER written, never auto-expired.
- *             An ERROR means the check failed, not that the job did, and a
- *             classifier allowed to retire inventory on its own is a classifier
- *             that will eventually retire it wrongly.
+ *   OPEN         -> delete_at += 7
+ *   MOVED        -> only if MovedTargetMatcher confirms the destination really
+ *                   is our job: apply_link rewritten, old value kept in
+ *                   job_apply_link_history, delete_at += 7
+ *   WRONG_TARGET -> a MOVED row whose destination is a different employer or
+ *                   place, or whose destination title was never captured.
+ *                   Listed for staff. NEVER relinked.
+ *   CLOSED/GONE/ERROR -> listed for staff, never written, never auto-expired.
+ *                   An ERROR means the check failed, not that the job did.
  *
- * Two of our jobs resolving to the SAME final offer are flagged and excluded
- * from the automatic path -- that is a duplicate for a human to settle, not a
- * link to rewrite.
+ * Jobs sharing one final offer are grouped and held back from the automatic
+ * path. Most are true duplicates, but not all: offer/118120821 was claimed by
+ * two unrelated employers in different prefectures, so "keep one, trash the
+ * other" would have destroyed a valid listing. The group verdict decides which
+ * actions the page is even willing to offer.
  *
- * Nothing here is applied on upload. Upload previews; a second, explicit
+ * Nothing is applied on upload. Upload previews; a second, explicit
  * confirmation writes.
  */
 class LinkCheckController extends Controller
@@ -48,6 +52,9 @@ class LinkCheckController extends Controller
     private const EXTEND_DAYS = 7;
 
     private const STAGE_DIR = 'link-check';
+
+    /** Staged uploads older than this are swept up. */
+    private const STAGE_TTL_HOURS = 24;
 
     /** Same gate as the other analytics pages, reading the one shared constant. */
     private function authorizeSuperAdmin(): void
@@ -61,6 +68,7 @@ class LinkCheckController extends Controller
     public function index(Request $request)
     {
         $this->authorizeSuperAdmin();
+        $this->sweepStaleUploads();
 
         return view('admin.analytics.link-check', [
             'activeSideMenu' => 'link_check',
@@ -77,11 +85,10 @@ class LinkCheckController extends Controller
     {
         $this->authorizeSuperAdmin();
 
-        $request->validate([
-            'csv_file' => 'required|file|mimes:csv,txt|max:10240',
-        ]);
+        $request->validate(['csv_file' => 'required|file|mimes:csv,txt|max:10240']);
 
-        $path = $request->file('csv_file')->getRealPath();
+        $upload = $request->file('csv_file');
+        $path = $upload->getRealPath();
         [$rows, $parseError] = $this->parseResultsCsv($path);
 
         if ($parseError !== null) {
@@ -94,19 +101,14 @@ class LinkCheckController extends Controller
         // Keep the upload so the apply step re-reads the file rather than
         // trusting anything round-tripped through the browser.
         $token = Str::uuid()->toString();
-        $stored = storage_path('app/' . self::STAGE_DIR);
-        if (! is_dir($stored)) {
-            mkdir($stored, 0775, true);
+        $dir = storage_path('app/' . self::STAGE_DIR);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
         }
-        copy($path, $stored . '/' . $token . '.csv');
+        copy($path, $dir . '/' . $token . '.csv');
+        file_put_contents($dir . '/' . $token . '.name', $upload->getClientOriginalName());
 
-        $plan = $this->buildPlan($rows);
-
-        return view('admin.analytics.link-check', [
-            'activeSideMenu' => 'link_check',
-            'preview'        => $plan + ['token' => $token],
-            'recent'         => $this->recentBatches(),
-        ]);
+        return $this->renderPreview($token, $this->buildPlan($rows));
     }
 
     /**
@@ -117,11 +119,8 @@ class LinkCheckController extends Controller
     {
         $this->authorizeSuperAdmin();
 
-        $request->validate(['token' => 'required|string|max:64']);
-        $token = preg_replace('/[^a-z0-9\-]/i', '', (string) $request->input('token'));
-        $file = storage_path('app/' . self::STAGE_DIR . '/' . $token . '.csv');
-
-        if ($token === '' || ! is_file($file)) {
+        [$token, $file] = $this->stagedFile($request);
+        if (! $file) {
             return redirect()->route('admin.analytics.link-check')
                 ->with('error', 'That upload has expired — please upload the CSV again.');
         }
@@ -143,7 +142,6 @@ class LinkCheckController extends Controller
             foreach ($plan['apply'] as $row) {
                 // Guarded write: status must still be Published AND the stored
                 // apply_link must still be the URL the scan actually fetched.
-                // If either moved, this row is stale -- skip it, do not guess.
                 $affected = DB::table('jobs')
                     ->where('job_no', $row['job_no'])
                     ->where('job_status_id', Job::STATUS_PUBLISHED)
@@ -159,21 +157,11 @@ class LinkCheckController extends Controller
                 }
 
                 $extended++;
-
-                DB::table('job_status_history')->insert([
-                    'job_no'        => $row['job_no'],
-                    'old_status'    => Job::STATUS_PUBLISHED,
-                    'new_status'    => Job::STATUS_PUBLISHED,
-                    'old_delete_at' => $row['old_delete_at'],
-                    'new_delete_at' => $row['new_delete_at'],
-                    'source'        => 'link-check',
-                    'actor'         => $actor,
-                    'reason'        => $row['class'] === 'MOVED'
+                $this->logStatusChange($row['job_no'], Job::STATUS_PUBLISHED, Job::STATUS_PUBLISHED,
+                    $row['old_delete_at'], $row['new_delete_at'], 'link-check', $actor, $batch,
+                    $row['class'] === 'MOVED'
                         ? 'still live at a new offer id; link rewritten, delete_at +' . self::EXTEND_DAYS
-                        : 'confirmed still live; delete_at +' . self::EXTEND_DAYS,
-                    'batch'         => $batch,
-                    'created_at'    => now(),
-                ]);
+                        : 'confirmed still live; delete_at +' . self::EXTEND_DAYS);
 
                 if ($row['new_link'] !== $row['current_link']) {
                     $relinked++;
@@ -194,10 +182,9 @@ class LinkCheckController extends Controller
         });
 
         $this->logBatch($batch, $actor, $plan, $extended, $relinked, $skipped);
+        $this->discardStaged($token);
 
-        @unlink($file);
-
-        $msg = "{$extended} job(s) extended by " . self::EXTEND_DAYS . " days"
+        $msg = "{$extended} job(s) extended by " . self::EXTEND_DAYS . ' days'
              . ($relinked ? ", {$relinked} apply link(s) rewritten" : '')
              . ($skipped ? ", {$skipped} skipped (changed since the scan)" : '')
              . ". Batch {$batch}.";
@@ -205,7 +192,220 @@ class LinkCheckController extends Controller
         return redirect()->route('admin.analytics.link-check')->with('success', $msg);
     }
 
+    /** Throw the staged upload away without writing anything. */
+    public function cancel(Request $request)
+    {
+        $this->authorizeSuperAdmin();
+        [$token, $file] = $this->stagedFile($request);
+        if ($file) {
+            $this->discardStaged($token);
+        }
+
+        return redirect()->route('admin.analytics.link-check')
+            ->with('success', 'Upload discarded. Nothing was changed.');
+    }
+
+    /**
+     * Act on one same-final-offer group: keep the oldest, keep the newest, or
+     * remember that it is not a duplicate at all.
+     */
+    public function groupAction(Request $request)
+    {
+        $this->authorizeSuperAdmin();
+
+        $data = $request->validate([
+            'action'    => 'required|in:keep_older,keep_newer,not_duplicate',
+            'final_url' => 'required|string|max:2048',
+            'job_nos'   => 'required|string|max:2048',
+            'token'     => 'nullable|string|max:64',
+        ]);
+
+        $jobNos = array_values(array_filter(array_map('trim', explode(',', $data['job_nos']))));
+        $actor = $this->actorName();
+        $user = session('user');
+
+        if ($data['action'] === 'not_duplicate') {
+            DB::table('dismissed_duplicates')->insertOrIgnore([
+                'group_hash'   => MovedTargetMatcher::groupHash($data['final_url']),
+                'dismissed_by' => $user->id ?? 0,
+                'dismissed_at' => now(),
+            ]);
+
+            return back()->with('success',
+                'Marked as not a duplicate — this group will not be shown again.');
+        }
+
+        $jobs = DB::table('jobs')->whereIn('job_no', $jobNos)
+            ->where('job_status_id', Job::STATUS_PUBLISHED)
+            ->select('job_no', 'date', 'delete_at')->get();
+
+        if ($jobs->count() < 2) {
+            return back()->with('error',
+                'Those jobs changed since the preview — reload and check them again. Nothing was changed.');
+        }
+
+        $sorted = $jobs->sortBy('date')->values();
+        $keep = $data['action'] === 'keep_older' ? $sorted->first() : $sorted->last();
+        $trash = $sorted->reject(fn ($j) => $j->job_no === $keep->job_no);
+
+        $batch = 'lca-' . date('Ymd-His');
+        $done = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($trash, $batch, $actor, $keep, &$done, &$skipped) {
+            foreach ($trash as $j) {
+                // updated_at IS bumped: the expired-page tier is computed from
+                // Expire_Date ?? updated_at, so a stale value would send a
+                // just-trashed page straight to a 301 or 410.
+                $n = DB::table('jobs')->where('job_no', $j->job_no)
+                    ->where('job_status_id', Job::STATUS_PUBLISHED)
+                    ->update(['job_status_id' => Job::STATUS_TRASHED, 'updated_at' => now()]);
+
+                if ($n === 0) {
+                    $skipped++;
+                    continue;
+                }
+                $done++;
+                $this->logStatusChange($j->job_no, Job::STATUS_PUBLISHED, Job::STATUS_TRASHED,
+                    $j->delete_at, $j->delete_at, 'link-check-action', $actor, $batch,
+                    "duplicate of job {$keep->job_no} (same final offer)");
+            }
+        });
+
+        $msg = "Kept job {$keep->job_no}; trashed {$done} duplicate(s)."
+             . ($skipped ? " {$skipped} skipped (changed since the preview)." : '');
+
+        return back()->with('success', $msg);
+    }
+
+    /** Act on one staff-review row: expire it, or give it another 7 days. */
+    public function rowAction(Request $request)
+    {
+        $this->authorizeSuperAdmin();
+
+        $data = $request->validate([
+            'action'       => 'required|in:expire,extend',
+            'job_no'       => 'required|string|max:20',
+            'current_link' => 'required|string|max:2048',
+        ]);
+
+        $job = DB::table('jobs')->where('job_no', $data['job_no'])
+            ->select('job_no', 'job_status_id', 'delete_at', 'apply_link')->first();
+
+        if (! $job
+            || (int) $job->job_status_id !== Job::STATUS_PUBLISHED
+            || trim((string) $job->apply_link) !== trim($data['current_link'])) {
+            return back()->with('error',
+                "Job {$data['job_no']} changed since the preview — nothing was changed. Reload and check it again.");
+        }
+
+        $batch = 'lca-' . date('Ymd-His');
+        $actor = $this->actorName();
+
+        if ($data['action'] === 'expire') {
+            $n = DB::table('jobs')->where('job_no', $job->job_no)
+                ->where('job_status_id', Job::STATUS_PUBLISHED)
+                ->where('apply_link', $job->apply_link)
+                ->update(['job_status_id' => Job::STATUS_EXPIRED, 'updated_at' => now()]);
+
+            if ($n === 0) {
+                return back()->with('error', "Job {$job->job_no} changed — nothing was changed.");
+            }
+            $this->logStatusChange($job->job_no, Job::STATUS_PUBLISHED, Job::STATUS_EXPIRED,
+                $job->delete_at, $job->delete_at, 'link-check-action', $actor, $batch,
+                'expired from link-check review');
+
+            return back()->with('success', "Job {$job->job_no} expired.");
+        }
+
+        $base = $job->delete_at ? strtotime($job->delete_at) : time();
+        $new = date('Y-m-d H:i:s', $base + self::EXTEND_DAYS * 86400);
+
+        $n = DB::table('jobs')->where('job_no', $job->job_no)
+            ->where('job_status_id', Job::STATUS_PUBLISHED)
+            ->where('apply_link', $job->apply_link)
+            ->update(['delete_at' => $new]);
+
+        if ($n === 0) {
+            return back()->with('error', "Job {$job->job_no} changed — nothing was changed.");
+        }
+        $this->logStatusChange($job->job_no, Job::STATUS_PUBLISHED, Job::STATUS_PUBLISHED,
+            $job->delete_at, $new, 'link-check-action', $actor, $batch,
+            'extended +' . self::EXTEND_DAYS . ' days from link-check review');
+
+        return back()->with('success',
+            "Job {$job->job_no} extended to " . date('d M Y', strtotime($new)) . '.');
+    }
+
     // ──────────────────────────────────────────────────────────────────────
+
+    private function renderPreview(string $token, array $plan)
+    {
+        $dir = storage_path('app/' . self::STAGE_DIR);
+        $nameFile = $dir . '/' . $token . '.name';
+        $csv = $dir . '/' . $token . '.csv';
+
+        return view('admin.analytics.link-check', [
+            'activeSideMenu' => 'link_check',
+            'preview'        => $plan + [
+                'token'       => $token,
+                'file_name'   => is_file($nameFile) ? file_get_contents($nameFile) : 'uploaded.csv',
+                'uploaded_at' => is_file($csv) ? date('d M Y, H:i', filemtime($csv)) : '',
+            ],
+            'recent'         => $this->recentBatches(),
+        ]);
+    }
+
+    /** @return array{0:string,1:?string} [token, path or null] */
+    private function stagedFile(Request $request): array
+    {
+        $token = preg_replace('/[^a-z0-9\-]/i', '', (string) $request->input('token', ''));
+        if ($token === '') {
+            return ['', null];
+        }
+        $file = storage_path('app/' . self::STAGE_DIR . '/' . $token . '.csv');
+
+        return [$token, is_file($file) ? $file : null];
+    }
+
+    private function discardStaged(string $token): void
+    {
+        $dir = storage_path('app/' . self::STAGE_DIR);
+        @unlink($dir . '/' . $token . '.csv');
+        @unlink($dir . '/' . $token . '.name');
+    }
+
+    /** Only the apply path used to clean up; an abandoned preview lingered. */
+    private function sweepStaleUploads(): void
+    {
+        $dir = storage_path('app/' . self::STAGE_DIR);
+        if (! is_dir($dir)) {
+            return;
+        }
+        $cutoff = time() - self::STAGE_TTL_HOURS * 3600;
+        foreach (glob($dir . '/*') ?: [] as $f) {
+            if (is_file($f) && filemtime($f) < $cutoff) {
+                @unlink($f);
+            }
+        }
+    }
+
+    private function logStatusChange(string $jobNo, ?int $old, ?int $new, $oldDeleteAt, $newDeleteAt,
+                                     string $source, string $actor, string $batch, string $reason): void
+    {
+        DB::table('job_status_history')->insert([
+            'job_no'        => $jobNo,
+            'old_status'    => $old,
+            'new_status'    => $new,
+            'old_delete_at' => $oldDeleteAt,
+            'new_delete_at' => $newDeleteAt,
+            'source'        => $source,
+            'actor'         => $actor,
+            'reason'        => $reason,
+            'batch'         => $batch,
+            'created_at'    => now(),
+        ]);
+    }
 
     /**
      * Read the scan's results CSV. Returns [rows, errorMessage|null].
@@ -256,6 +456,8 @@ class LinkCheckController extends Controller
      */
     private function buildPlan(array $rows): array
     {
+        $matcher = new MovedTargetMatcher();
+
         $byJobNo = [];
         foreach ($rows as $r) {
             $byJobNo[trim((string) $r['job_no'])] = $r;
@@ -263,24 +465,63 @@ class LinkCheckController extends Controller
 
         $jobs = DB::table('jobs')
             ->whereIn('job_no', array_keys($byJobNo))
-            ->select('job_no', 'title', 'job_status_id', 'apply_link', 'delete_at')
+            ->select('job_no', 'title', 'job_status_id', 'apply_link', 'delete_at',
+                     'company_name', 'address', 'date')
             ->get()
             ->keyBy('job_no');
 
-        // Two of our jobs landing on one final offer is a duplicate, not a link fix.
-        $finalCounts = [];
+        $dismissed = DB::table('dismissed_duplicates')->pluck('group_hash')->flip();
+
+        // A MOVED row is only actionable if the destination really is our job.
+        $wrongTarget = [];
+        foreach ($byJobNo as $jobNo => $r) {
+            if (($r['classification'] ?? '') !== 'MOVED') {
+                continue;
+            }
+            $job = $jobs[$jobNo] ?? null;
+            if (! $job) {
+                continue;
+            }
+            $verdict = $matcher->matches($job->company_name, $job->address, $r['source_title'] ?? '');
+            if (! $verdict['same']) {
+                $byJobNo[$jobNo]['classification'] = 'WRONG_TARGET';
+                $byJobNo[$jobNo]['note'] = $verdict['reason'];
+                $wrongTarget[$jobNo] = true;
+            }
+        }
+
+        // Jobs landing on one final offer: group them, unless staff already
+        // said the group is not a duplicate.
+        $finalMembers = [];
         foreach ($byJobNo as $jobNo => $r) {
             if (! in_array($r['classification'], self::ACTIONABLE, true)) {
                 continue;
             }
             $final = trim((string) $r['final_url']);
-            if ($final === '') {
+            if ($final !== '') {
+                $finalMembers[$final][] = $jobNo;
+            }
+        }
+        $heldByGroup = [];
+        $groups = [];
+        foreach ($finalMembers as $final => $members) {
+            if (count($members) < 2) {
                 continue;
             }
-            $finalCounts[$final][] = $jobNo;
+            $hash = MovedTargetMatcher::groupHash($final);
+            if (isset($dismissed[$hash])) {
+                continue;   // staff said these are different jobs; let them through
+            }
+            $groups[] = $this->buildGroup($final, $hash, $members, $jobs, $byJobNo, $matcher);
+            foreach ($members as $m) {
+                $heldByGroup[$m] = true;
+            }
         }
+        // Different-jobs groups first, then the largest, then by offer.
+        usort($groups, fn ($a, $b) => [$a['verdict'] === 'same', -count($a['jobs'])]
+                                   <=> [$b['verdict'] === 'same', -count($b['jobs'])]);
 
-        $apply = $review = $collisions = $notFound = $notPublished = [];
+        $apply = $review = $notFound = $notPublished = [];
 
         foreach ($byJobNo as $jobNo => $r) {
             $class = $r['classification'];
@@ -292,14 +533,7 @@ class LinkCheckController extends Controller
             }
 
             if (! in_array($class, self::ACTIONABLE, true)) {
-                $review[] = [
-                    'job_no' => $jobNo,
-                    'class'  => $class,
-                    'title'  => $job->title,
-                    'url'    => $r['requested_url'],
-                    'status' => (int) $job->job_status_id,
-                    'note'   => $r['note'] ?? '',
-                ];
+                $review[] = $this->reviewRow($jobNo, $class, $job, $r, $r['note'] ?? '');
                 continue;
             }
 
@@ -309,28 +543,20 @@ class LinkCheckController extends Controller
                 continue;
             }
 
-            $final = trim((string) $r['final_url']);
-            $group = $finalCounts[$final] ?? [];
-            if (count($group) > 1) {
-                $collisions[] = ['job_no' => $jobNo, 'final' => $final,
-                                 'others' => array_values(array_diff($group, [$jobNo])),
-                                 'title' => $job->title];
-                continue;
+            if (isset($heldByGroup[$jobNo])) {
+                continue;   // shown in its group card instead
             }
 
             // Stale row: the stored link is no longer what the scan fetched.
             if (trim((string) $job->apply_link) !== trim((string) $r['requested_url'])) {
-                $review[] = [
-                    'job_no' => $jobNo, 'class' => $class, 'title' => $job->title,
-                    'url' => $r['requested_url'], 'status' => (int) $job->job_status_id,
-                    'note' => 'apply_link changed since the scan — re-scan this job',
-                ];
+                $review[] = $this->reviewRow($jobNo, $class, $job, $r,
+                    'apply_link changed since the scan — re-scan this job');
                 continue;
             }
 
+            $final = trim((string) $r['final_url']);
             $old = $job->delete_at;
             $base = $old ? strtotime($old) : time();
-            $new = date('Y-m-d H:i:s', $base + self::EXTEND_DAYS * 86400);
 
             $apply[] = [
                 'job_no'        => $jobNo,
@@ -339,7 +565,7 @@ class LinkCheckController extends Controller
                 'current_link'  => trim((string) $job->apply_link),
                 'new_link'      => $final !== '' ? $final : trim((string) $job->apply_link),
                 'old_delete_at' => $old,
-                'new_delete_at' => $new,
+                'new_delete_at' => date('Y-m-d H:i:s', $base + self::EXTEND_DAYS * 86400),
                 'http_code'     => $r['http_code'] ?? null,
                 'num_redirects' => is_numeric($r['num_redirects'] ?? null) ? (int) $r['num_redirects'] : null,
                 'checked_at'    => ! empty($r['checked_at']) ? date('Y-m-d H:i:s', strtotime($r['checked_at'])) : null,
@@ -348,10 +574,12 @@ class LinkCheckController extends Controller
 
         usort($apply, fn ($a, $b) => [$a['class'], $a['job_no']] <=> [$b['class'], $b['job_no']]);
 
+        $groupJobCount = array_sum(array_map(fn ($g) => count($g['jobs']), $groups));
+
         return [
             'apply'        => $apply,
             'review'       => $review,
-            'collisions'   => $collisions,
+            'groups'       => $groups,
             'notFound'     => $notFound,
             'notPublished' => $notPublished,
             'counts'       => [
@@ -360,10 +588,96 @@ class LinkCheckController extends Controller
                 'moved'        => count(array_filter($apply, fn ($x) => $x['class'] === 'MOVED')),
                 'open'         => count(array_filter($apply, fn ($x) => $x['class'] === 'OPEN')),
                 'review'       => count($review),
-                'collisions'   => count($collisions),
+                'wrongTarget'  => count($wrongTarget),
+                'groups'       => count($groups),
+                'groupJobs'    => $groupJobCount,
+                'groupsDiff'   => count(array_filter($groups, fn ($g) => $g['verdict'] !== 'same')),
                 'notFound'     => count($notFound),
                 'notPublished' => count($notPublished),
             ],
+        ];
+    }
+
+    private function reviewRow(string $jobNo, string $class, $job, array $r, string $note): array
+    {
+        return [
+            'job_no'       => $jobNo,
+            'class'        => $class,
+            'title'        => $job->title,
+            'company'      => $job->company_name,
+            'url'          => $r['requested_url'] ?? '',
+            'final_url'    => $r['final_url'] ?? '',
+            'page_title'   => $r['source_title'] ?? '',
+            'current_link' => trim((string) $job->apply_link),
+            'status'       => (int) $job->job_status_id,
+            'delete_at'    => $job->delete_at,
+            'note'         => $note !== '' ? $note : (string) ($r['note'] ?? ''),
+        ];
+    }
+
+    /** One same-final-offer card: the jobs, the verdict, and the evidence. */
+    private function buildGroup(string $final, string $hash, array $members, $jobs,
+                                array $byJobNo, MovedTargetMatcher $matcher): array
+    {
+        $rows = [];
+        foreach ($members as $jobNo) {
+            $j = $jobs[$jobNo];
+            $rows[] = [
+                'job_no'    => $jobNo,
+                'title'     => $j->title,
+                'company'   => $j->company_name,
+                'address'   => $j->address,
+                'created'   => $j->date,
+                'delete_at' => $j->delete_at,
+                'status'    => (int) $j->job_status_id,
+                'link'      => $j->apply_link,
+            ];
+        }
+        usort($rows, fn ($a, $b) => strcmp((string) $a['created'], (string) $b['created']));
+        $rows[0]['is_oldest'] = true;
+
+        $pageTitle = '';
+        foreach ($members as $m) {
+            if (! empty($byJobNo[$m]['source_title'])) {
+                $pageTitle = $byJobNo[$m]['source_title'];
+                break;
+            }
+        }
+
+        $verdict = $matcher->sameGroup(array_map(
+            fn ($r) => ['company_name' => $r['company'], 'address' => $r['address']], $rows));
+
+        // Which of OUR jobs does the destination page actually describe? On a
+        // "different jobs" group this is the one that legitimately owns the
+        // link — the others have the wrong link stored and need fixing by hand.
+        foreach ($rows as $i => $r) {
+            $m = $matcher->matches($r['company'], $r['address'], $pageTitle);
+            $rows[$i]['matches_page'] = $m['same'];
+            $rows[$i]['match_reason'] = $m['reason'];
+            $rows[$i]['is_oldest'] = $r['is_oldest'] ?? false;
+        }
+        $owner = null;
+        foreach ($rows as $r) {
+            if ($r['matches_page']) {
+                $owner = $r['job_no'];
+                break;
+            }
+        }
+
+        return [
+            'final'        => $final,
+            'hash'         => $hash,
+            'page_title'   => $pageTitle,
+            'jobs'         => $rows,
+            'verdict'      => $verdict['same'] ? 'same' : 'different',
+            'verdict_text' => $verdict['same']
+                ? 'Same job — duplicate'
+                : 'Different jobs — shigotoin redirect',
+            'evidence'     => $verdict['reason']
+                . ($verdict['shared_address'] !== ''
+                    ? ' (shared address text “' . $verdict['shared_address'] . '”)' : ''),
+            'owner'        => $owner,
+            'job_nos'      => implode(',', array_column($rows, 'job_no')),
         ];
     }
 
@@ -371,7 +685,8 @@ class LinkCheckController extends Controller
      * Append a run summary to its own file. Production runs LOG_LEVEL=error, so
      * Log::info() would be discarded and we would collect nothing.
      */
-    private function logBatch(string $batch, string $actor, array $plan, int $extended, int $relinked, int $skipped): void
+    private function logBatch(string $batch, string $actor, array $plan,
+                              int $extended, int $relinked, int $skipped): void
     {
         $file = storage_path('logs/link-check-' . date('Y-m') . '.log');
         $line = implode("\t", [
@@ -381,7 +696,8 @@ class LinkCheckController extends Controller
             'relinked=' . $relinked,
             'skipped=' . $skipped,
             'review=' . $plan['counts']['review'],
-            'collisions=' . $plan['counts']['collisions'],
+            'wrong_target=' . $plan['counts']['wrongTarget'],
+            'groups=' . $plan['counts']['groups'],
         ]) . "\n";
 
         foreach ($plan['apply'] as $row) {
@@ -404,9 +720,9 @@ class LinkCheckController extends Controller
     {
         try {
             return DB::table('job_status_history')
-                ->where('source', 'link-check')
-                ->select('batch', 'actor', DB::raw('COUNT(*) as n'), DB::raw('MAX(created_at) as at'))
-                ->groupBy('batch', 'actor')
+                ->whereIn('source', ['link-check', 'link-check-action'])
+                ->select('batch', 'actor', 'source', DB::raw('COUNT(*) as n'), DB::raw('MAX(created_at) as at'))
+                ->groupBy('batch', 'actor', 'source')
                 ->orderByDesc('at')
                 ->limit(10)
                 ->get()
