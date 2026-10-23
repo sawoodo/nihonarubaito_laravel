@@ -85,6 +85,62 @@ class MovedTargetMatcher
     }
 
     /**
+     * Does the redirect land on the SAME listing id it started from?
+     *
+     * This is a stronger signal than any title comparison, and it exists
+     * because baitoru and shigotoin redirect for opposite reasons.
+     *
+     *   baitoru    entry/form/job160917922/ -> entry/160917922?obo_tab_kbn=
+     *              Same listing, new URL shape. Measured 2026-10-23: every one
+     *              of our 693 legacy links redirects, and the id is carried
+     *              through unchanged.
+     *   shigotoin  offer/121273633 -> offer/121403405
+     *              A genuinely different offer id, which may or may not be our
+     *              employer. That is the case matches() exists to judge.
+     *
+     * Without this, every baitoru MOVED row fails matches() for a reason that
+     * says nothing about the destination: baitoru's apply page is titled
+     * 「応募フォーム - バイトル」 and names no company or place at all. 693
+     * same-listing rewrites would queue for staff review and bury the few rows
+     * that genuinely need a human.
+     *
+     * Derived from the two URLs, never read from the results file: the CSV is
+     * staff-uploaded, and a column that grants an automatic relink must not be
+     * forgeable by editing a spreadsheet.
+     *
+     * Compares runs of 5+ digits because the id is the only long number in
+     * either URL — path layout is not hardcoded, so this holds for any host.
+     * Tracking parameters (?pname=link_job_entry_pc_detail_all_1) carry no such
+     * run and cannot create a false match.
+     *
+     * @return array{same:bool,id:?string,reason:string}
+     */
+    public function sameListingId(?string $requestedUrl, ?string $finalUrl): array
+    {
+        $ids = static function (?string $u): array {
+            preg_match_all('/\d{5,}/', (string) $u, $m);
+            return array_unique($m[0]);
+        };
+
+        $from = $ids($requestedUrl);
+        $to   = $ids($finalUrl);
+
+        if (! $from || ! $to) {
+            return ['same' => false, 'id' => null,
+                    'reason' => 'no listing id in one of the URLs — cannot compare'];
+        }
+
+        $shared = array_values(array_intersect($from, $to));
+        if ($shared) {
+            return ['same' => true, 'id' => $shared[0],
+                    'reason' => "redirect keeps listing id {$shared[0]} — same posting, new URL"];
+        }
+
+        return ['same' => false, 'id' => $from[0] ?? null,
+                'reason' => 'redirect changed the listing id — may be a different job'];
+    }
+
+    /**
      * Are these jobs the same posting? Used for the same-final-offer groups.
      *
      * Address is the PRIMARY signal. Company naming is unreliable here: group

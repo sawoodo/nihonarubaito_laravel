@@ -532,6 +532,19 @@ class LinkCheckController extends Controller
         $lastApplied = $this->lastAppliedCheckedAt(array_keys($byJobNo));
 
         // A MOVED row is only actionable if the destination really is our job.
+        //
+        // Two independent ways to establish that, checked in order of strength:
+        //
+        //   1. The redirect keeps the source's own listing id. Then it is the
+        //      same posting by definition and no title is needed — which is the
+        //      only way baitoru's 693 legacy links can be handled, since its
+        //      apply page is titled 「応募フォーム - バイトル」 and names neither
+        //      company nor place, so matches() can never confirm anything.
+        //   2. Failing that, the destination <title> must name our company or
+        //      a place from our address (shigotoin, which rotates ids).
+        //
+        // An id that CHANGED is not neutral evidence, it is the shigotoin case,
+        // so it still has to pass the title check before anything is rewritten.
         $wrongTarget = [];
         foreach ($byJobNo as $jobNo => $r) {
             if (($r['classification'] ?? '') !== 'MOVED') {
@@ -541,11 +554,22 @@ class LinkCheckController extends Controller
             if (! $job) {
                 continue;
             }
+
+            $byId = $matcher->sameListingId(
+                $r['requested_url'] ?? '', $r['final_url'] ?? '');
+            if ($byId['same']) {
+                $byJobNo[$jobNo]['note'] = $byId['reason'];
+                $byJobNo[$jobNo]['verified_by'] = 'listing_id';
+                continue;
+            }
+
             $verdict = $matcher->matches($job->company_name, $job->address, $r['source_title'] ?? '');
             if (! $verdict['same']) {
                 $byJobNo[$jobNo]['classification'] = 'WRONG_TARGET';
                 $byJobNo[$jobNo]['note'] = $verdict['reason'];
                 $wrongTarget[$jobNo] = true;
+            } else {
+                $byJobNo[$jobNo]['verified_by'] = 'title';
             }
         }
 
