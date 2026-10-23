@@ -165,9 +165,7 @@ class LinkCheckController extends Controller
                 $extended++;
                 $this->logStatusChange($row['job_no'], Job::STATUS_PUBLISHED, Job::STATUS_PUBLISHED,
                     $row['old_delete_at'], $row['new_delete_at'], 'link-check', $actor, $batch,
-                    $row['class'] === 'MOVED'
-                        ? 'still live at a new offer id; link rewritten, delete_at +' . self::EXTEND_DAYS
-                        : 'confirmed still live; delete_at +' . self::EXTEND_DAYS,
+                    $this->extendReason($row),
                     $row['checked_at']);
 
                 if ($row['new_link'] !== $row['current_link']) {
@@ -420,6 +418,32 @@ class LinkCheckController extends Controller
      *   was observed. Stored so a re-upload of the same results file becomes a
      *   no-op; null for manual actions, which have no scan behind them.
      */
+    /**
+     * The permanent record of WHY a job was extended.
+     *
+     * This used to read "still live at a new offer id" for every MOVED row,
+     * which is true of shigotoin and false of baitoru: baitoru redirects the
+     * legacy apply form to the same listing id in a newer URL shape, so the id
+     * is precisely what did NOT change. Writing the shigotoin sentence against
+     * 693 baitoru rows would leave job_status_history describing something that
+     * never happened — and this table exists because, before 2026-10-21, "how
+     * was this job retired?" had no answer anywhere.
+     */
+    private function extendReason(array $row): string
+    {
+        $days = '; delete_at +' . self::EXTEND_DAYS;
+
+        if (($row['class'] ?? '') !== 'MOVED') {
+            return 'confirmed still live' . $days;
+        }
+
+        return match ($row['verified_by'] ?? null) {
+            'listing_id' => 'same listing at a new URL (redirect kept the id); link rewritten' . $days,
+            'title'      => 'still live at a new id, destination confirmed ours; link rewritten' . $days,
+            default      => 'redirect followed; link rewritten' . $days,
+        };
+    }
+
     private function logStatusChange(string $jobNo, ?int $old, ?int $new, $oldDeleteAt, $newDeleteAt,
                                      string $source, string $actor, string $batch, string $reason,
                                      ?string $sourceCheckedAt = null): void
@@ -678,6 +702,13 @@ class LinkCheckController extends Controller
                 'http_code'     => $r['http_code'] ?? null,
                 'num_redirects' => is_numeric($r['num_redirects'] ?? null) ? (int) $r['num_redirects'] : null,
                 'checked_at'    => $checkedAt,
+                // Why a MOVED row was accepted: 'listing_id' (the redirect kept
+                // the source's own id) or 'title' (the destination page names
+                // our company or place). Carried through to the preview and the
+                // batch log, because "a link was rewritten" is not a reviewable
+                // record without the reason it was judged safe.
+                'verified_by'   => $r['verified_by'] ?? null,
+                'note'          => (string) ($r['note'] ?? ''),
             ];
         }
 
@@ -1172,6 +1203,8 @@ class LinkCheckController extends Controller
                 $row['old_delete_at'] . ' -> ' . $row['new_delete_at'],
                 $row['new_link'] !== $row['current_link']
                     ? $row['current_link'] . ' -> ' . $row['new_link'] : 'link unchanged',
+                'verified_by=' . ($row['verified_by'] ?? '-'),
+                (string) ($row['note'] ?? ''),
             ]) . "\n";
         }
 
