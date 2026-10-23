@@ -3,6 +3,18 @@
 > Connection details (SSH host/port/user, DB name) are kept in a separate private
 > credentials note, NOT in this file. Read DB_DATABASE live from .env; never hardcode.
 
+## Deploy Rule — PUSH BEFORE DEPLOYING (always)
+GitHub is the source of truth. Work happens on a Mac and a Windows PC, so a
+commit that is live on the server but not on origin/main leaves the other
+machine silently behind and the server ahead of every copy of the repo.
+Order, every time, no exceptions:
+  1. commit
+  2. `git fetch` + `git push origin main`  ← never skipped, never deferred
+  3. deploy (scp + the usual gates)
+Pushing after the deploy is not the same thing: if a gate fails and the deploy
+is rolled back, what shipped and what is on origin have already diverged.
+Set 2026-10-23, after three commits ran live while still unpushed.
+
 ## Environment
 - Domain: https://nihonarubaito.com  |  Admin: /admin/login
 - Hosting: SiteGround (Japan server). `php artisan cache:clear` does NOT purge
