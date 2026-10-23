@@ -1,38 +1,58 @@
 #!/usr/bin/env python3
 """
-link-check.py -- report-only apply-link checker for shigotoin.com jobs.
+link-check.py -- report-only apply-link checker for job-source sites.
 
 WHERE TO RUN: on the Mac, with the Japan VPN ON. Never on the server --
-shigotoin returns 403 to the SiteGround IP (it egresses via Singapore).
+shigotoin returns 403 to the SiteGround IP (it egresses via Singapore), and
+baitoru blocks it by geo/ASN as well.
 
 WHAT IT DOES: reads a TSV of published jobs, fetches each apply_link with
 redirects followed, and classifies the destination. It writes a CSV and
 NOTHING ELSE -- no database writes, no edits, no deploys.
 
+TWO HOSTS, TWO SIGNATURES. --host picks the profile (see HOSTS below). The
+hosts do not fail the same way, so a single shared control set would be a
+decoration rather than a guard:
+  shigotoin  a closed listing is HTTP 200 + 「この求人の募集は終了しました」
+  baitoru    a closed listing is HTTP 404 (~96.8 KB, no <title>, 見つかりません)
+Running shigotoin's controls against a baitoru file would pass while proving
+nothing about baitoru, so guard 4 refuses a file that does not match --host.
+
 GUARDS (run before any job is fetched; a failure aborts the run):
   1. ipinfo.io country must be JP, else we are not on the VPN.
-  2. A known-OPEN offer must classify OPEN or MOVED.
-  3. A known-CLOSED offer must classify CLOSED.
+  2. A known-OPEN page on THIS host must classify OPEN or MOVED.
+  3. A known-CLOSED page on THIS host must classify as the host's closed
+     verdict (shigotoin CLOSED, baitoru GONE).
+  4. Every input row's apply_link must belong to THIS host.
 Guard 3 is the one that matters. On 2026-10-21 the phrase "お探しの" fired on
 both open and closed pages (it is ordinary body copy, and also sits on the 404
 page); without a closed control that would have been read as a wave of closures.
+It also catches the failure that would quietly ruin a baitoru run: if baitoru
+ever soft-404s (200 + "not found" body), every row would read OPEN, the error
+rate would stay at zero, and nothing else here would notice.
 
 CLASSIFICATION, in this order:
   GONE    404 or 410
-  CLOSED  200 AND body contains この求人の募集は終了しました / 掲載終了しています
+  CLOSED  200 AND body contains one of the host's closed phrases
   MOVED   200, final URL != requested URL, no closed phrase
   OPEN    200, final URL == requested URL, no closed phrase
   ERROR   timeout, 403, 5xx, maintenance page, undersized body, anything else
 
-Three rules learned the hard way and encoded above:
+Rules learned the hard way and encoded above:
   - A closed shigotoin page is HTTP 200, not an error. Never infer CLOSED
     from a status code.
   - A redirect is NOT a closed signal. On 2026-10-21, 8 of 11 *published*
     control jobs also 301'd to a fresh offer ID. shigotoin rotates IDs.
   - Never use "お探しの" as a marker. See above.
+  - A baitoru MOVED is usually not a move at all. Its legacy apply form
+    entry/form/jobNNN/ 301s to entry/NNN?obo_tab_kbn= with the SAME numeric
+    id -- a URL-shape rewrite, not shigotoin-style offer rotation. The note
+    column records id_preserved vs id_changed so the two are never confused
+    downstream, where "MOVED" means "verify this is still our job".
 
 USAGE
   python3 scripts/link-check.py --guards-only
+  python3 scripts/link-check.py --host baitoru --guards-only
   python3 scripts/link-check.py --input ~/nihon-linkcheck/jobs.tsv \
                                 --output ~/nihon-linkcheck/results.csv \
                                 --limit 1300 --delay 6
@@ -114,35 +134,78 @@ def ca_bundle():
     print(f"TLS: {base} + {os.path.basename(CA_EXTRA)}")
     return _ca_bundle
 
-# Phrases that appear ONLY on a closed listing. Verified against a known-closed
-# page on 2026-10-21: "この求人の募集は終了しました。表示中の求人は掲載終了しています。"
-CLOSED_MARKERS = [
-    "この求人の募集は終了しました",
-    "掲載終了しています",
-    "募集を終了しました",
-    "募集終了",
-    "受付終了",
-]
-
 # Markers meaning "the host is unhappy", never "the job is closed".
 BLOCKED_MARKERS = ["緊急メンテナンス", "Request blocked", "Access Denied", "アクセスが制限"]
 
-# Controls. The closed one is the load-bearing guard.
+# ---------------------------------------------------------------------------
+# Host profiles
+#
+# Each host gets its own closed signature and its own controls, because the
+# two sites do not agree on what "closed" looks like and a control from one
+# proves nothing about the other.
 #
 # The open control is a LIST, not one URL, and we only need one of them to be
-# live. A single hardcoded "known-open" offer is hostage to its own lifecycle:
+# live. A single hardcoded "known-open" page is hostage to its own lifecycle:
 # on 2026-10-21 offer/121304887 (job 163561) was verified OPEN with zero closed
 # markers at 14:53Z and was CLOSED by 16:25Z the same afternoon. That is a true
 # positive, not a detector fault -- but it would block every future run.
-CONTROL_OPEN_CANDIDATES = [
-    "https://shigotoin.com/offer/121273633",   # job 163581, OPEN 2026-10-21
-    "https://shigotoin.com/offer/121257099",   # job 163579, OPEN 2026-10-21
-    "https://shigotoin.com/offer/121403405",   # final of 162711 + 163516
-    "https://shigotoin.com/offer/121396489",   # final of 161727
-]
-CONTROL_CLOSED = "https://shigotoin.com/offer/121000000"  # 200 + 掲載終了 on 2026-10-21
+#
+# The closed control is the opposite: it must be a page that will STAY closed.
+# shigotoin's is an offer id that was already 掲載終了 on 2026-10-21; baitoru's
+# is a purged legacy form (job 152684, retired) which 404s permanently.
+# ---------------------------------------------------------------------------
+HOSTS = {
+    "shigotoin": {
+        "url_match": "shigotoin.com",
+        # Verified against a known-closed page on 2026-10-21:
+        # "この求人の募集は終了しました。表示中の求人は掲載終了しています。"
+        "closed_markers": [
+            "この求人の募集は終了しました",
+            "掲載終了しています",
+            "募集を終了しました",
+            "募集終了",
+            "受付終了",
+        ],
+        "open_controls": [
+            "https://shigotoin.com/offer/121273633",   # job 163581, OPEN 2026-10-21
+            "https://shigotoin.com/offer/121257099",   # job 163579, OPEN 2026-10-21
+            "https://shigotoin.com/offer/121403405",   # final of 162711 + 163516
+            "https://shigotoin.com/offer/121396489",   # final of 161727
+        ],
+        "closed_control": "https://shigotoin.com/offer/121000000",
+        "closed_verdict": "CLOSED",     # 200 + 掲載終了 on 2026-10-21
+        # a real job page was 8.9-14.4 KB; the 404 page is ~4.8 KB
+        "min_body_bytes": 3000,
+    },
+    "baitoru": {
+        "url_match": "baitoru.com",
+        # baitoru signals closure with a 404, so these are a soft-404 backstop
+        # only. 見つかりません sits on the 404 page, which has no <title> at all.
+        # NOT "お探しの" -- same trap as shigotoin, it is ordinary body copy.
+        "closed_markers": [
+            "この求人の募集は終了しました",
+            "掲載は終了しました",
+            "募集を終了しました",
+        ],
+        # 4 legacy forms verified 200 + 「応募フォーム - バイトル」 on 2026-10-23
+        "open_controls": [
+            "https://www.baitoru.com/entry/form/job160917922/",  # job 156428
+            "https://www.baitoru.com/entry/form/job158971620/",  # job 156396
+            "https://www.baitoru.com/entry/form/job160456488/",  # job 156387
+            "https://www.baitoru.com/entry/form/job53156757/",   # job 156386
+        ],
+        # job 152684, retired: 404, 96,828 bytes, no title, 見つかりません
+        "closed_control": "https://www.baitoru.com/entry/form/job136496130/",
+        "closed_verdict": "GONE",
+        # the 404 page is ~96.8 KB, far LARGER than a real 68 KB form, so the
+        # size floor cannot separate them here -- the status code does.
+        "min_body_bytes": 3000,
+    },
+}
 
-MIN_BODY_BYTES = 3000   # a real job page was 8.9-14.4 KB; the 404 page is ~4.8 KB
+# Set by main() from --host; every classification reads it.
+HOST = HOSTS["shigotoin"]
+
 RECHECK_IP_EVERY = 200  # the VPN can drop during a multi-hour run
 ERROR_ABORT_RATIO = 0.30
 ERROR_ABORT_MIN = 50
@@ -228,27 +291,74 @@ def classify(url, res):
     if code != "200":
         return "ERROR", "", f"http_{code}"
 
-    if res["size"] < MIN_BODY_BYTES:
+    if res["size"] < HOST["min_body_bytes"]:
         return "ERROR", "", f"body_too_small_{res['size']}"
 
-    markers = [m for m in CLOSED_MARKERS if m in body]
+    markers = [m for m in HOST["closed_markers"] if m in body]
     if markers:
         return "CLOSED", "|".join(markers), ""
 
     req = url.rstrip("/")
     fin = res["final"].rstrip("/")
     if fin != req:
-        return "MOVED", "", ""
+        return "MOVED", "", redirect_note(url, res["final"])
     return "OPEN", "", ""
 
 
-def run_guards(verbose=True):
+def redirect_note(requested, final):
+    """
+    Say whether a redirect kept the job id, because MOVED means two different
+    things depending on the answer.
+
+    baitoru rewrites entry/form/job160917922/ -> entry/160917922?obo_tab_kbn=
+    for every legacy link: same job, new URL shape. shigotoin instead rotates
+    to a genuinely different offer id, which is the case that needs a human to
+    confirm it is still our job. Comparing the longest digit run in each URL
+    separates them without hardcoding either site's path layout.
+    """
+    def ids(u):
+        return set(re.findall(r"\d{5,}", u))
+
+    a, b = ids(requested), ids(final)
+    if not a or not b:
+        return ""
+    if a & b:
+        return "id_preserved"
+    return "id_changed"
+
+
+def check_input_host(path, host_name):
+    """
+    Guard 4: refuse an input file that is not the host we have controls for.
+
+    Without this, pointing the shigotoin profile at a baitoru file passes
+    guards 1-3 (they fetch shigotoin's own controls) and then classifies 1,360
+    baitoru pages with the wrong closed signature. Returns (ok, total, matched).
+    """
+    needle = HOSTS[host_name]["url_match"]
+    total = matched = 0
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for r in csv.DictReader(fh, delimiter="\t"):
+                link = (r.get("apply_link") or "").strip()
+                if not link:
+                    continue
+                total += 1
+                if needle in link:
+                    matched += 1
+    except OSError as e:                                      # noqa: BLE001
+        print(f"    FAIL: cannot read {path} ({e.__class__.__name__})")
+        return False, 0, 0
+    return total > 0 and matched == total, total, matched
+
+
+def run_guards(host_name, input_path=None, verbose=True):
     """Return True only if every guard passes."""
     ok = True
 
     if verbose:
         print("=" * 64)
-        print("GUARDS")
+        print(f"GUARDS  (host profile: {host_name})")
         print("=" * 64)
 
     jp, country, org = check_jp()
@@ -259,9 +369,9 @@ def run_guards(verbose=True):
     print("    PASS")
 
     print("[2] open ctrl  (need >=1 of "
-          f"{len(CONTROL_OPEN_CANDIDATES)} to be live)")
+          f"{len(HOST['open_controls'])} to be live)")
     live = 0
-    for url in CONTROL_OPEN_CANDIDATES:
+    for url in HOST["open_controls"]:
         res = fetch(url)
         cls, mk, note = classify(url, res)
         title, _ = parse_title(res.get("body", "")) if res["ok"] else ("", "")
@@ -284,17 +394,30 @@ def run_guards(verbose=True):
 
     time.sleep(5)
 
-    print(f"[3] closed ctrl {CONTROL_CLOSED}")
-    res = fetch(CONTROL_CLOSED)
-    cls, mk, note = classify(CONTROL_CLOSED, res)
+    expect = HOST["closed_verdict"]
+    print(f"[3] closed ctrl {HOST['closed_control']}")
+    print(f"    expecting {expect}")
+    res = fetch(HOST["closed_control"])
+    cls, mk, note = classify(HOST["closed_control"], res)
     print(f"    -> {cls}  http={res.get('code','-')} bytes={res.get('size','-')}")
     print(f"       markers: {mk or '(none)'}")
-    if cls == "CLOSED":
-        print("    PASS (the closed-marker detector fires)")
+    if cls == expect:
+        print("    PASS (the closed detector fires on this host)")
     else:
-        print(f"    FAIL: expected CLOSED, got {cls} ({note}). "
+        print(f"    FAIL: expected {expect}, got {cls} ({note}). "
               "Detector is blind -- every result would read as open. Aborting.")
         ok = False
+
+    if input_path:
+        print(f"[4] input host  must all be {HOSTS[host_name]['url_match']}")
+        hok, total, matched = check_input_host(input_path, host_name)
+        print(f"    {matched}/{total} row(s) match")
+        if hok:
+            print("    PASS")
+        else:
+            print(f"    FAIL: {total - matched} row(s) are not {host_name}. "
+                  "Wrong --host for this file, or a mixed file. Aborting.")
+            ok = False
 
     print("=" * 64)
     print("GUARDS: " + ("ALL PASS" if ok else "FAILED"))
@@ -353,7 +476,11 @@ def load_rows(path, limit, settled=frozenset(), retry=frozenset()):
 
 
 def main():
+    global HOST
+
     ap = argparse.ArgumentParser()
+    ap.add_argument("--host", choices=sorted(HOSTS), default="shigotoin",
+                    help="which source site's signature and controls to use")
     ap.add_argument("--input", default=os.path.expanduser(
         "~/nihon-linkcheck/shigotoin-published-20261021.tsv"))
     ap.add_argument("--output", default=os.path.expanduser(
@@ -367,12 +494,18 @@ def main():
                     help="ignore the existing results file and re-check everything")
     args = ap.parse_args()
 
+    HOST = HOSTS[args.host]
+
     settled, retry = (set(), set()) if args.fresh else load_done(args.output)
 
     if args.plan:
         rows = load_rows(args.input, args.limit, settled, retry)
         all_rows = load_rows(args.input, 0, settled, retry)
+        hok, htotal, hmatched = check_input_host(args.input, args.host)
         print("RESUME PLAN (nothing fetched)")
+        print(f"  host profile      : {args.host}"
+              f"  ({hmatched}/{htotal} rows match"
+              f"{'' if hok else ' — MISMATCH, guard 4 would abort'})")
         print(f"  results file      : {args.output}")
         print(f"  already settled   : {len(settled)}  (skipped)")
         print(f"  ERROR to retry    : {len(retry)}  (re-fetched first)")
@@ -388,7 +521,7 @@ def main():
             print("  nothing left to check")
         return
 
-    if not run_guards():
+    if not run_guards(args.host, args.input):
         sys.exit(2)
     if args.guards_only:
         print("\n--guards-only: stopping before the batch. No jobs fetched.")
@@ -401,6 +534,7 @@ def main():
               f"{len(retry)} ERROR row(s) queued for retry")
     print(f"\nbatch: {total} rows, {args.delay}s apart "
           f"(~{total * args.delay / 3600:.1f}h)")
+    print(f"host  : {args.host}")
     print(f"input : {args.input}")
     print(f"output: {args.output}\n")
 
