@@ -86,17 +86,47 @@ ssh nihonarubaito 'whoami'
    ssh nihonarubaito 'md5sum www/nihonarubaito.com/public_html/laravel/app/Http/Controllers/Foo.php'
    ```
    The hashes must match.
-6. **If you deployed anything under `config/`, or changed `.env` on the server, rebuild the config cache.** Otherwise the change has no effect at all:
+6. **Finish with the config cache REBUILT, and prove the app boots.** This is not
+   conditional. Rebuild it whether or not you touched `config/` or `.env`, and
+   *always* if the deploy ran `config:clear`, `cache:clear` or `optimize:clear`
+   — a deploy that ends with the cache missing leaves the site exposed to the
+   empty-`.env` fault below:
    ```bash
-   ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && php artisan config:cache'
+   ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && \
+     php artisan config:cache && \
+     php -r "\$c = require \"bootstrap/cache/config.php\"; echo \"key_len=\", strlen(\$c[\"app\"][\"key\"] ?? \"\"), \" db=\", \$c[\"database\"][\"default\"] ?? \"?\", \" env=\", \$c[\"app\"][\"env\"] ?? \"?\", \" debug=\", var_export(\$c[\"app\"][\"debug\"], true), PHP_EOL;" && \
+     php artisan --version'
    ```
-   Then confirm it rebuilt correctly (see below). Route and view caches are **not** in use, so nothing else needs a rebuild.
+   Expected: `key_len=51 db=mysql env=production debug=false`, then a
+   `Laravel Framework ...` version line. The version line is the boot check —
+   if the app cannot boot, that line is an exception instead.
+
+   Route and view caches are **not** in use, so nothing else needs a rebuild.
+
+7. **Last gate: no new errors.** `config:clear` and friends fail quietly — the
+   site keeps serving while a fraction of requests 500:
+   ```bash
+   ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && \
+     grep -c "No application encryption key\|Database file at path" storage/logs/laravel.log'
+   ```
+   Note the count before the deploy and again a few minutes after. It must not
+   climb. Either string means requests are booting without `.env`.
 
 ### Config cache: why it exists and the trap it creates
 
 Since 2026-09-23 production runs with a cached config (`bootstrap/cache/config.php`). It stops roughly 40 requests a day from returning HTTP 500 when the host's filesystem hands back an empty `.env` — see `docs/ledger.md`.
 
 **The trap: while the cache exists, `.env` and `config/` are ignored at runtime.** Edit either one and nothing changes until `php artisan config:cache` runs again.
+
+**The second trap, and the worse one: clearing the cache re-arms the fault.** On
+2026-10-24 a deploy ran `php artisan config:clear` as a routine cache-clearing
+step and never rebuilt. The site stayed up and every health check passed — but
+over the next 19 hours **52 requests** died with
+`MissingAppKeyException`, plus one falling through to sqlite. There had been
+**zero** in the preceding ten days. Nothing surfaced it: the failures are a
+fraction of traffic, the pages a human checks are fine, and `LOG_LEVEL=error`
+means they only ever appear in `laravel.log`. Clearing this cache is a
+production change, not housekeeping — step 6 above is how it gets undone.
 
 Rebuilding reads `.env` once. If that read hits the same filesystem hiccup, it bakes broken defaults in for *every* request, so always verify straight afterwards:
 

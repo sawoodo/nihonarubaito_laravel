@@ -11,9 +11,36 @@ Order, every time, no exceptions:
   1. commit
   2. `git fetch` + `git push origin main`  ← never skipped, never deferred
   3. deploy (scp + the usual gates)
+  4. **leave the config cache REBUILT** — see the next rule
 Pushing after the deploy is not the same thing: if a gate fails and the deploy
 is rolled back, what shipped and what is on origin have already diverged.
 Set 2026-10-23, after three commits ran live while still unpushed.
+
+## Deploy Rule — NEVER LEAVE THE CONFIG CACHE CLEARED
+Production MUST end every deploy with `bootstrap/cache/config.php` present.
+It is not an optimisation: this host's filesystem intermittently hands Laravel
+an **empty `.env`**, and a request that boots without it gets no `APP_KEY` and
+falls back to sqlite, then 500s. The cache means requests never read `.env`.
+See docs/ledger.md 2026-09-23 and SiteGround ticket #5141798 (still open).
+
+So any deploy that runs `config:clear` (or `optimize:clear`) must finish with:
+```bash
+ssh nihonarubaito 'cd www/nihonarubaito.com/public_html/laravel && \
+  php artisan config:cache && \
+  php -r "\$c=require \"bootstrap/cache/config.php\"; \
+    printf(\"key_len=%d db=%s env=%s debug=%s\n\", strlen(\$c[\"app\"][\"key\"]??\"\"), \
+    \$c[\"database\"][\"default\"]??\"?\", \$c[\"app\"][\"env\"]??\"?\", \
+    var_export(\$c[\"app\"][\"debug\"],true));" && \
+  php artisan --version'
+```
+Expect `key_len=51 db=mysql env=production debug=false` and a version line.
+`db=sqlite` or `key_len=0` means the rebuild baked in a failed `.env` read —
+run `config:clear` immediately and rebuild. Read the generated file with
+`php -r`, never via artisan/tinker: a broken cache reports itself as fine.
+
+Rebuilding is also what makes a `config/` or `.env` change take effect at all.
+Set 2026-10-24, after a deploy's `config:clear` left the cache absent for 19
+hours and 52 requests 500'd on the empty-`.env` fault it exists to mask.
 
 ## Environment
 - Domain: https://nihonarubaito.com  |  Admin: /admin/login
