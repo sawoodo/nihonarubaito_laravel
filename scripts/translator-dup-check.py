@@ -71,10 +71,25 @@ def unescape(v):
 
 
 def read_tsv(path):
-    with open(path, encoding='utf-8', newline='') as f:
-        r = csv.reader(f, delimiter='\t', quoting=csv.QUOTE_NONE)
-        head = next(r)
-        return [dict(zip(head, map(unescape, row))) for row in r if row]
+    """mysql --batch escapes \\n, \\t and \\\\ but NOT \\r. A raw CR inside a
+    field (e.g. '<br>\\r\\n' in station) would be read by csv as a line break
+    and split the row. Real row ends are always \\n, so every raw CR is data:
+    drop it before parsing. Then refuse any row whose field count is wrong,
+    at the line it occurs on, instead of building a silently short dict."""
+    with open(path, 'rb') as f:
+        text = f.read().replace(b'\r', b'').decode('utf-8')
+    lines = text.split('\n')
+    head = lines[0].split('\t')
+    rows = []
+    for n, line in enumerate(lines[1:], start=2):
+        if line == '':
+            continue
+        cells = line.split('\t')
+        if len(cells) != len(head):
+            sys.exit(f'{path}: line {n} has {len(cells)} fields, expected {len(head)} — '
+                     f'export is malformed, nothing analysed')
+        rows.append(dict(zip(head, map(unescape, cells))))
+    return rows
 
 
 def when(v):

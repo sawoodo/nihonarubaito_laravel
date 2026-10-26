@@ -45,7 +45,7 @@ CNF=$(mktemp); chmod 600 "$CNF"; trap 'rm -f "$CNF"' EXIT
 printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\n' "$(val DB_USERNAME)" "$(val DB_PASSWORD)" "$(val DB_HOST)" > "$CNF"
 DB=$(val DB_DATABASE)
 OUT=~/exports/dupcheck-$(date +%Y%m%d-%H%M); mkdir -p "$OUT"
-COLS='job_no, job_status_id, `date`, updated_at, Expire_Date, delete_at, user_id, company_name, address, station, job_category_id, prefecture_id, area_id, title, apply_link'
+COLS='job_no, job_status_id, `date`, updated_at, Expire_Date, user_id, company_name, address, job_category_id, title, apply_link'
 mysql --defaults-extra-file="$CNF" --batch "$DB" -e "
   SELECT $COLS FROM jobs
    WHERE lang_id = 1 AND job_status_id IN (3,4,5,6)
