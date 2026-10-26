@@ -33,6 +33,8 @@ MATCH BASIS (how two jobs were judged to be the same listing)
   source-id  same source site and same listing id
              (shigotoin offer, baitoru job, FamilyMart entry)
   shop       same normalised address AND same company name
+             (address must contain a street number; town-only addresses
+             never produce a shop match)
   shop~      same normalised address AND same job category, different
              company name (agencies) -- medium confidence, check by eye
 
@@ -198,7 +200,10 @@ def candidates(r, idx):
         add(j, 'link')
     for j in by_sid.get(r['_sid'], []) if r['_sid'] else []:
         add(j, 'source-id')
-    if len(r['_addr']) >= 6:
+    # A shop match needs a SPECIFIC address. Without a street number
+    # ('岐阜県大垣市久瀬川町') "same address" only means "same town", and one
+    # agency's different vacancies in that town would all look identical.
+    if len(r['_addr']) >= 6 and re.search(r'\d', r['_addr']):
         for j in by_addr.get(r['_addr'], []):
             if r['_co'] and j['_co'] == r['_co']:
                 add(j, 'shop')
