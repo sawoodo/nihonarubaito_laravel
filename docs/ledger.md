@@ -4,6 +4,67 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-27 — 221 duplicate published jobs merged (batch dd-20261027-072837)
+
+**What:** 212 groups of published jobs that were the same listing. The oldest job
+in each group was kept, given the newest copy's apply link, and the group's latest
+delete_at; the newer copies were trashed (status 5, Expire_Date = now).
+
+**Result:** 221 trashed, 212 kept, 165 relinked. Verified against all 433 affected
+rows: 0 wrong status, 0 wrong apply_link, 0 missing, 0 trashed without Expire_Date.
+Final spread exactly 212 published / 221 trashed.
+
+**The rule took four passes to get right, and each pass was caught by evidence, not
+by review of the code.** The first plan would have trashed 389 jobs, of which 182
+were not duplicates at all:
+
+- A `shop` match required the same address but no similar ROLE. For a staffing
+  agency the stored address is the agency office, so one address covers many
+  different placements. 株式会社ディンプル had "Family Restaurant Cashier" merged
+  with "Shrimp Cracker Shop Sales Staff". Fixed by requiring role similarity on
+  every path (role = the title before " at ").
+- Six real vacancies at ホテルエミオン東京ベイ (Italian cooking, Italian hall,
+  Japanese restaurant hall, …) shared one address and wage and were merged into
+  one. All six had DISTINCT shigotoin offer ids — the source itself said they were
+  different listings. The planner never consulted the offer id; now it does.
+- `wage_key` joined every digit, so "1,150円〜1,500円" became 11501500 and did not
+  equal "1,150円" → 1150. Two genuine FamilyMart duplicates were missed. Now it
+  takes the STARTING wage.
+- `norm_addr` converted 4丁目 but not 四丁目, so 北栄一丁目13-17 and 北栄1-13-17
+  read as different places. Now kanji 丁目 is normalised first.
+- Two jobs sharing a station but in different towns (東大阪市荒本新町 vs 菱江,
+  both 荒本駅) were treated as one place. Station-only matches now also require
+  the town-level addresses to agree.
+- Same-listing pairs whose roles differ wildly ("Warehouse Packing" vs "Hospital
+  Cooking Staff" on one offer) are a mistranslation, not a duplicate. 14 such
+  pairs are held for the team: held-for-review-20261027.csv.
+
+**Lessons:**
+- **One address is not one workplace.** For agencies it is the office. Any
+  address-based identity rule needs a second signal — here, the role.
+- **The source's own listing id is the authority on whether two ads are one job.**
+  Distinct offer ids were present and ignored in the first three passes.
+- **A plan-first command earns its keep.** Every one of these defects was found by
+  reading 20 sample groups and counting, before anything was written. The apply
+  itself was uneventful.
+- **ROW_COUNT() is 0 for an UPDATE that changes nothing**, so the keeper history
+  INSERT (guarded on @r = 1) was skipped for 23 keepers whose link was already
+  newest and whose delete_at was already latest. kept = 189, not 212. Predicted
+  exactly: 165 relinked + 24 delete_at bumps. The data is correct; only those 23
+  audit rows are absent. If that matters, guard on ROW_COUNT() >= 0 with a
+  separate existence check instead.
+
+**Backups (server):** ~/exports/dedupe-20261027-0137/
+  jobs-before.sql (1,012,360 B, all 433 rows, --complete-insert),
+  history-before.sql (1,026,484 B, both history tables),
+  backup.csv, plan.csv, review.csv, rollback.sql
+
+**Rollback (do not run unless needed):** rollback.sql in that folder restores the
+keepers' apply_link and delete_at, returns the 221 to status 3 with their original
+Expire_Date and updated_at, and deletes this batch's history rows.
+
+---
+
 ## 2026-10-15 — Status 6 (quota full) is an unhandled lifecycle state: 621 pages advertised expired JobPostings
 
 **Found while checking why four early-2025 top-ranking job pages (108421, 112252, 112112, 113067) had lost value.** They had not been redirected or 410'd — all four were **live, 200, indexable, with `JobPosting` schema**, for listings that closed in Nov 2024 – Jan 2025. `validThrough` read `2024-11-29`, `2025-01-16`, `2025-01-14`, `2025-01-26` — 21–23 months in the past.
