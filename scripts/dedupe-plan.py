@@ -91,7 +91,11 @@ def station_key(s):
 
 
 def wage_key(w):
-    return ''.join(re.findall(r'\d+', unicodedata.normalize('NFKC', w or '')))
+    """The starting wage. '1,150円〜1,500円' and '1,150円' are the same job's
+    wage written two ways; joining every digit ('11501500') made them differ."""
+    w = unicodedata.normalize('NFKC', w or '').replace(',', '')
+    m = re.search(r'\d{3,}', w)
+    return m.group(0) if m else ''
 
 
 def role_part(t):
@@ -141,7 +145,11 @@ def judge(a, b):
     sa, sb = specific(a['_addr']), specific(b['_addr'])
     if sa and sb and a['_addr'] != b['_addr']:
         return None                                   # two shops of one agency
-    same_place = (sa and sb) or (not sa and not sb and a['_st'] and a['_st'] == b['_st'])
+    # Without street numbers, the same station is only the same place if the
+    # town-level addresses agree too (one may be a shorter form of the other):
+    # 東大阪市荒本新町 and 東大阪市菱江 share 荒本駅 but are different towns.
+    town_ok = a['_addr'].startswith(b['_addr']) or b['_addr'].startswith(a['_addr'])
+    same_place = (sa and sb) or (not sa and not sb and a['_st'] and a['_st'] == b['_st'] and town_ok)
     if not same_place:
         return 'review' if (a['_st'] and a['_st'] == b['_st']) else None
     same_wage = bool(a['_wage']) and a['_wage'] == b['_wage']
