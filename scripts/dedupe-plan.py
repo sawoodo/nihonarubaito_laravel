@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""
+dedupe-plan.py -- plan the merge of PUBLISHED duplicate jobs. Generates only;
+applies nothing.
+
+For every group of published jobs that are certainly the same listing:
+  KEEP   the OLDEST job (its page has the history and the ranking)
+  LINK   give it the NEWEST job's apply link (the most recently sourced one),
+         old value recorded in job_apply_link_history
+  DATE   keep the later review date (delete_at) of the group
+  TRASH  the newer copies: status 5, Expire_Date = now, updated_at = now,
+         one job_status_history row each
+
+CERTAIN (planned)  both published, same normalised company, same category,
+                   same wage, and EITHER
+                     - the same specific address (contains a street number), OR
+                     - the same station AND near-identical titles,
+                   and never two specific addresses that differ
+                   (that is two shops of one agency).
+REVIEW  (listed)   same company + same station, but title or wage differs, or
+                   only one side has a specific address. Never planned.
+
+INPUT   published.tsv  (mysql --batch export, see /dedupe-published)
+OUTPUT  <out>/plan.csv        one row per job in a planned group
+        <out>/review.csv      pairs a human should look at
+        <out>/backup.csv      every column the apply step changes, as it is now
+        <out>/precheck.sql    lists rows that no longer match the plan (expect 0)
+        <out>/apply.sql       guarded statements, one batch id
+        <out>/rollback.sql    restores backup values for this batch only
+
+Every UPDATE is guarded on the row still being published with the exact
+apply_link seen at export time, so anything that moved since is skipped,
+not overwritten. A keeper is relinked only after all of its duplicates were
+actually trashed by this batch.
+
+USAGE
+  python3 -I scripts/dedupe-plan.py --published P.tsv --out-dir DIR [--batch dd-...]
+"""
+
+import argparse
+import csv
+import datetime as dt
+import importlib.util
+import os
+import re
+import sys
+import unicodedata
+from collections import defaultdict
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_spec = importlib.util.spec_from_file_location('dupcheck', os.path.join(HERE, 'translator-dup-check.py'))
+dc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(dc)          # reuse read_tsv, norm_addr, norm_company, norm_link
+
+TITLE_MIN = 0.80
+STATION = re.compile(r'([一-龯々ぁ-んァ-ヶー・]{1,12}駅)')
+
+
+def station_key(s):
+    s = unicodedata.normalize('NFKC', s or '')
+    m = STATION.search(s)
+    return m.group(1) if m else ''
+
+
+def wage_key(w):
+    return ''.join(re.findall(r'\d+', unicodedata.normalize('NFKC', w or '')))
+
+
+def title_tokens(t):
+    t = unicodedata.normalize('NFKC', t or '').lower().replace('&', ' and ')
+    t = re.sub(r'[\d,]+円', ' ', t)
+    t = re.sub(r'[^a-z0-9\s]', ' ', t)
+    stop = {'part', 'time', 'job', 'jobs', 'at', 'in', 'the', 'a', 'an', 'and', 'for', 'of', 'station'}
+    return {w for w in t.split() if w not in stop}
+
+
+def title_sim(a, b):
+    ta, tb = title_tokens(a), title_tokens(b)
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def specific(addr):
+    return bool(re.search(r'\d', addr)) and len(addr) >= 6
+
+
+def judge(a, b):
+    """'certain', 'review' or None for two published jobs of one company."""
+    if a['_cat'] != b['_cat']:
+        return None
+    sa, sb = specific(a['_addr']), specific(b['_addr'])
+    if sa and sb and a['_addr'] != b['_addr']:
+        return None                                   # two shops of one agency
+    same_wage = a['_wage'] and a['_wage'] == b['_wage']
+    if sa and sb and a['_addr'] == b['_addr']:
+        return 'certain' if same_wage else 'review'
+    if a['_st'] and a['_st'] == b['_st']:
+        sim = title_sim(a['title'], b['title'])
+        if same_wage and sim >= TITLE_MIN and not (sa != sb):
+            return 'certain'
+        return 'review'
+    return None
+
+
+def sql_str(v):
+    if v is None or v == '':
+        return 'NULL'
+    return "'" + str(v).replace('\\', '\\\\').replace("'", "\\'") + "'"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--published', required=True)
+    ap.add_argument('--out-dir', required=True)
+    ap.add_argument('--batch', default='dd-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S'))
+    a = ap.parse_args()
+
+    rows = [r for r in dc.read_tsv(a.published) if r['job_status_id'] == '3']
+    for r in rows:
+        r['_co'] = dc.norm_company(r['company_name'])
+        r['_addr'] = dc.norm_addr(r['address'])
+        r['_st'] = station_key(r['station'])
+        r['_wage'] = wage_key(r['wage'])
+        r['_cat'] = r['job_category_id']
+        r['_date'] = dc.when(r['date']) or dt.datetime.min
+
+    by_co = defaultdict(list)
+    for r in rows:
+        if r['_co']:
+            by_co[r['_co']].append(r)
+
+    # union-find over CERTAIN pairs
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    review = []
+    for co, js in by_co.items():
+        if len(js) < 2:
+            continue
+        # bucket by station or address to keep big agencies cheap
+        buckets = defaultdict(list)
+        for j in js:
+            for k in {('a', j['_addr']) if specific(j['_addr']) else None,
+                      ('s', j['_st']) if j['_st'] else None} - {None}:
+                buckets[k].append(j)
+        seen = set()
+        for b in buckets.values():
+            for i in range(len(b)):
+                for k in range(i + 1, len(b)):
+                    x, y = b[i], b[k]
+                    key = tuple(sorted((x['job_no'], y['job_no'])))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    v = judge(x, y)
+                    if v == 'certain':
+                        parent[find(x['job_no'])] = find(y['job_no'])
+                    elif v == 'review':
+                        review.append((x, y))
+
+    by_no = {r['job_no']: r for r in rows}
+    comps = defaultdict(list)
+    for no in list(parent):
+        comps[find(no)].append(by_no[no])
+
+    groups = []
+    for members in comps.values():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda r: (r['_date'], int(r['job_no']) if r['job_no'].isdigit() else 0))
+        keep = members[0]
+        # every trashed copy must be CERTAIN against the keeper itself
+        dups = [m for m in members[1:] if judge(keep, m) == 'certain']
+        if not dups:
+            continue
+        newest = max([keep] + dups, key=lambda r: r['_date'])
+        groups.append({'keep': keep, 'dups': dups, 'new_link': newest['apply_link'],
+                       'new_delete_at': max((r['delete_at'] or '') for r in [keep] + dups) or keep['delete_at']})
+
+    os.makedirs(a.out_dir, exist_ok=True)
+    B = a.batch
+    out = lambda n: os.path.join(a.out_dir, n)
+
+    with open(out('plan.csv'), 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['group', 'role', 'job_no', 'created', 'company', 'address', 'station', 'wage',
+                    'title', 'apply_link', 'new_apply_link', 'delete_at', 'new_delete_at'])
+        for g_i, g in enumerate(groups, 1):
+            k = g['keep']
+            w.writerow([g_i, 'KEEP', k['job_no'], k['date'][:10], k['company_name'], k['address'], k['_st'],
+                        k['wage'], k['title'], k['apply_link'],
+                        g['new_link'] if g['new_link'] != k['apply_link'] else '', k['delete_at'], g['new_delete_at']])
+            for d in g['dups']:
+                w.writerow([g_i, 'TRASH', d['job_no'], d['date'][:10], d['company_name'], d['address'], d['_st'],
+                            d['wage'], d['title'], d['apply_link'], '', d['delete_at'], ''])
+
+    with open(out('review.csv'), 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['job_a', 'job_b', 'company', 'station_a', 'station_b', 'address_a', 'address_b',
+                    'wage_a', 'wage_b', 'title_a', 'title_b'])
+        for x, y in review:
+            w.writerow([x['job_no'], y['job_no'], x['company_name'], x['_st'], y['_st'], x['address'], y['address'],
+                        x['wage'], y['wage'], x['title'], y['title']])
+
+    touched = [g['keep'] for g in groups] + [d for g in groups for d in g['dups']]
+    with open(out('backup.csv'), 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['job_no', 'job_status_id', 'apply_link', 'delete_at', 'Expire_Date', 'updated_at'])
+        for r in touched:
+            w.writerow([r['job_no'], r['job_status_id'], r['apply_link'], r['delete_at'],
+                        r.get('Expire_Date', ''), r['updated_at']])
+
+    with open(out('precheck.sql'), 'w', encoding='utf-8') as f:
+        f.write('SET NAMES utf8mb4;\n-- rows that no longer match the plan; expect an empty result\n')
+        conds = [f"(job_no = {sql_str(r['job_no'])} AND NOT (job_status_id = 3 AND apply_link <=> {sql_str(r['apply_link'])}))"
+                 for r in touched]
+        f.write('SELECT job_no, job_status_id, apply_link FROM jobs WHERE\n  ' + '\n  OR '.join(conds or ['0']) + ';\n')
+
+    with open(out('apply.sql'), 'w', encoding='utf-8') as f:
+        f.write(f"-- batch {B}: {len(groups)} groups, {sum(len(g['dups']) for g in groups)} jobs trashed\n")
+        f.write('SET NAMES utf8mb4;\nSTART TRANSACTION;\n')
+        for g in groups:
+            k = g['keep']
+            for d in g['dups']:
+                f.write(f"UPDATE jobs SET job_status_id = 5, Expire_Date = NOW(), updated_at = NOW()\n"
+                        f"  WHERE job_no = {sql_str(d['job_no'])} AND job_status_id = 3 AND apply_link <=> {sql_str(d['apply_link'])};\n"
+                        f"SET @r = ROW_COUNT();\n"
+                        f"INSERT INTO job_status_history (job_no, old_status, new_status, old_delete_at, new_delete_at, source, actor, reason, batch, created_at)\n"
+                        f"  SELECT {sql_str(d['job_no'])}, 3, 5, {sql_str(d['delete_at'])}, {sql_str(d['delete_at'])}, 'dedupe', 'claude-code', "
+                        f"{sql_str('duplicate of job ' + k['job_no'])}, {sql_str(B)}, NOW() FROM DUAL WHERE @r = 1;\n")
+            n = len(g['dups'])
+            dup_list = ', '.join(sql_str(d['job_no']) for d in g['dups'])
+            all_trashed = (f"(SELECT c FROM (SELECT COUNT(*) AS c FROM job_status_history WHERE batch = {sql_str(B)} "
+                           f"AND new_status = 5 AND job_no IN ({dup_list})) AS x) = {n}")
+            new_link = g['new_link']
+            date_set = (f",\n  delete_at = GREATEST(COALESCE(delete_at, '1970-01-01'), {sql_str(g['new_delete_at'])})"
+                        if g['new_delete_at'] else '')   # never GREATEST(x, NULL): that is NULL
+            f.write(f"UPDATE jobs SET apply_link = {sql_str(new_link)}{date_set}\n"
+                    f"  WHERE job_no = {sql_str(k['job_no'])} AND job_status_id = 3 AND apply_link <=> {sql_str(k['apply_link'])}\n"
+                    f"  AND {all_trashed};\n"
+                    f"SET @r = ROW_COUNT();\n")
+            if new_link != k['apply_link']:
+                f.write(f"INSERT INTO job_apply_link_history (job_no, old_apply_link, new_apply_link, source, actor, batch, created_at)\n"
+                        f"  SELECT {sql_str(k['job_no'])}, {sql_str(k['apply_link'])}, {sql_str(new_link)}, 'dedupe', 'claude-code', {sql_str(B)}, NOW() "
+                        f"FROM DUAL WHERE @r = 1;\n")
+            f.write(f"INSERT INTO job_status_history (job_no, old_status, new_status, old_delete_at, new_delete_at, source, actor, reason, batch, created_at)\n"
+                    f"  SELECT {sql_str(k['job_no'])}, 3, 3, {sql_str(k['delete_at'])}, {sql_str(g['new_delete_at'])}, 'dedupe', 'claude-code', "
+                    f"{sql_str('kept; merged ' + ', '.join(d['job_no'] for d in g['dups']))}, {sql_str(B)}, NOW() FROM DUAL WHERE @r = 1;\n")
+        f.write(f"SELECT 'trashed' AS what, COUNT(*) AS n FROM job_status_history WHERE batch = {sql_str(B)} AND new_status = 5\n"
+                f"UNION ALL SELECT 'kept', COUNT(*) FROM job_status_history WHERE batch = {sql_str(B)} AND new_status = 3\n"
+                f"UNION ALL SELECT 'relinked', COUNT(*) FROM job_apply_link_history WHERE batch = {sql_str(B)};\n"
+                f"COMMIT;\n")
+
+    with open(out('rollback.sql'), 'w', encoding='utf-8') as f:
+        f.write(f'-- undo batch {B}\nSET NAMES utf8mb4;\nSTART TRANSACTION;\n')
+        for g in groups:
+            k = g['keep']
+            f.write(f"UPDATE jobs SET apply_link = {sql_str(k['apply_link'])}, delete_at = {sql_str(k['delete_at'])}\n"
+                    f"  WHERE job_no = {sql_str(k['job_no'])} AND job_no IN (SELECT job_no FROM job_status_history WHERE batch = {sql_str(B)});\n")
+            for d in g['dups']:
+                f.write(f"UPDATE jobs SET job_status_id = 3, Expire_Date = {sql_str(d.get('Expire_Date'))}, updated_at = {sql_str(d['updated_at'])}\n"
+                        f"  WHERE job_no = {sql_str(d['job_no'])} AND job_status_id = 5 "
+                        f"AND job_no IN (SELECT job_no FROM job_status_history WHERE batch = {sql_str(B)});\n")
+        f.write(f"DELETE FROM job_apply_link_history WHERE batch = {sql_str(B)};\n"
+                f"DELETE FROM job_status_history WHERE batch = {sql_str(B)};\nCOMMIT;\n")
+
+    trashed = sum(len(g['dups']) for g in groups)
+    relink = sum(1 for g in groups if g['new_link'] != g['keep']['apply_link'])
+    print(f'batch            {B}')
+    print(f'published jobs   {len(rows)}')
+    print(f'groups planned   {len(groups)}')
+    print(f'  jobs kept      {len(groups)}  (relinked to the newest link: {relink})')
+    print(f'  jobs trashed   {trashed}')
+    print(f'review pairs     {len(review)}  (not planned)')
+    print(f'files in         {a.out_dir}')
+
+
+if __name__ == '__main__':
+    main()
