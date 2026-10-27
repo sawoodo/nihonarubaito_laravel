@@ -72,6 +72,8 @@
                         <input type="hidden" name="job_no" value="{{ $match['job_no'] }}">
                         <input type="hidden" name="new_link" value="{{ $m['new_link'] }}">
                         <input type="hidden" name="delete_in_days" value="{{ $m['delete_in_days'] }}">
+                        <input type="hidden" name="expect_status" value="{{ $match['job_status_id'] }}">
+                        <input type="hidden" name="expect_link" value="{{ $match['apply_link'] }}">
                         <input type="hidden" name="return_to" value="{{ $m['return_to'] }}">
                         <button type="submit" class="btn btn-primary">
                             <i class="fa fa-link"></i>

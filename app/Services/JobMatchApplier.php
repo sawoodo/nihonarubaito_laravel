@@ -38,7 +38,16 @@ class JobMatchApplier
 
     /**
      * Give job $jobNo the newly sourced apply link, and revive it if it was
-     * retired inside the window. Returns a result for the caller to flash.
+     * retired inside the window.
+     *
+     * $expectStatus and $expectLink are what the card showed the person. The
+     * row is re-read FOR UPDATE inside the transaction and must still match
+     * both, or nothing is written: the card is a snapshot in a session, and
+     * between rendering it and the click another translator may have edited,
+     * trashed or relinked the same job. Overwriting then would silently undo
+     * their work and the history row would describe a state that never existed.
+     * This is the same guard the Link Check apply step uses -- status 3 AND the
+     * exact apply_link the scan saw -- for the same reason.
      *
      * @return array{ok: bool, message: string, revived: bool}
      */
@@ -46,6 +55,8 @@ class JobMatchApplier
         string $jobNo,
         string $newLink,
         int $deleteInDays,
+        int $expectStatus,
+        string $expectLink,
         string $source,
         string $actor
     ): array {
@@ -54,42 +65,70 @@ class JobMatchApplier
             return ['ok' => false, 'message' => 'That apply link is not a usable URL — nothing changed.', 'revived' => false];
         }
 
-        $job = DB::table('jobs')->where('job_no', $jobNo)->first();
-        if (! $job) {
-            return ['ok' => false, 'message' => "Job {$jobNo} no longer exists — nothing changed.", 'revived' => false];
-        }
+        $stale = [
+            'ok' => false,
+            'revived' => false,
+            'message' => "Job {$jobNo} changed since this card was shown — nothing done. "
+                . 'Open the job to see its current state, or submit the XML again for a fresh check.',
+        ];
 
-        $status = (int) $job->job_status_id;
-        $live = in_array($status, self::LIVE, true);
-        $retired = in_array($status, self::RETIRED, true);
-
-        if (! $live && ! $retired) {
-            return ['ok' => false, 'message' => "Job {$jobNo} is a draft — open it and edit it directly.", 'revived' => false];
-        }
-
-        if ($retired) {
-            $since = $job->Expire_Date ?: $job->updated_at;
-            $days = $since ? (int) floor((time() - strtotime((string) $since)) / 86400) : null;
-            if ($days === null || $days > JobMatcher::REVIVE_WINDOW_DAYS) {
-                return [
-                    'ok' => false,
-                    'revived' => false,
-                    'message' => "Job {$jobNo} was retired more than " . JobMatcher::REVIVE_WINDOW_DAYS
-                        . ' days ago — create the new job instead of reviving a stale page.',
-                ];
-            }
-        }
-
-        // The later of the job's own review date and the new default, so a
-        // relink never brings a review date forward.
-        $proposed = date('Y-m-d', strtotime("+{$deleteInDays} days"));
-        $current = $job->delete_at ? date('Y-m-d', strtotime((string) $job->delete_at)) : null;
-        $newDeleteAt = ($current !== null && $current > $proposed) ? $current : $proposed;
-
+        $result = ['ok' => false, 'revived' => false, 'message' => 'Nothing done.'];
         $batch = self::batchId();
-        $oldLink = (string) ($job->apply_link ?? '');
 
-        DB::transaction(function () use ($job, $jobNo, $newLink, $oldLink, $newDeleteAt, $retired, $status, $source, $actor, $batch) {
+        DB::transaction(function () use (
+            $jobNo, $newLink, $deleteInDays, $expectStatus, $expectLink,
+            $source, $actor, $batch, $stale, &$result
+        ) {
+            $job = DB::table('jobs')->where('job_no', $jobNo)->lockForUpdate()->first();
+            if (! $job) {
+                $result = ['ok' => false, 'revived' => false,
+                    'message' => "Job {$jobNo} no longer exists — nothing changed."];
+
+                return;
+            }
+
+            $status = (int) $job->job_status_id;
+            $oldLink = (string) ($job->apply_link ?? '');
+
+            if ($status !== $expectStatus || trim($oldLink) !== trim($expectLink)) {
+                $result = $stale;
+
+                return;
+            }
+
+            $live = in_array($status, self::LIVE, true);
+            $retired = in_array($status, self::RETIRED, true);
+
+            if (! $live && ! $retired) {
+                $result = ['ok' => false, 'revived' => false,
+                    'message' => "Job {$jobNo} is a draft — open it and edit it directly."];
+
+                return;
+            }
+
+            if ($retired) {
+                $since = $job->Expire_Date ?: $job->updated_at;
+                $days = $since ? (int) floor((time() - strtotime((string) $since)) / 86400) : null;
+                if ($days === null || $days > JobMatcher::REVIVE_WINDOW_DAYS) {
+                    $result = [
+                        'ok' => false,
+                        'revived' => false,
+                        'message' => "Job {$jobNo} was retired more than " . JobMatcher::REVIVE_WINDOW_DAYS
+                            . ' days ago — create the new job instead of reviving a stale page.',
+                    ];
+
+                    return;
+                }
+            }
+
+            // The later of the job's own review date and the new default, so a
+            // relink never brings a review date forward. Either way it is in
+            // the future, which is what makes a revived job safe to publish:
+            // a past delete_at would put it straight back in the overdue list.
+            $proposed = date('Y-m-d', strtotime("+{$deleteInDays} days"));
+            $current = $job->delete_at ? date('Y-m-d', strtotime((string) $job->delete_at)) : null;
+            $newDeleteAt = ($current !== null && $current > $proposed) ? $current : $proposed;
+
             $update = [
                 'apply_link' => $newLink,
                 'delete_at' => $newDeleteAt,
@@ -135,15 +174,17 @@ class JobMatchApplier
                     : 'already live; link rewritten from a new import',
                 'created_at' => now(),
             ]);
+
+            $result = [
+                'ok' => true,
+                'revived' => $retired,
+                'message' => $retired
+                    ? "Job {$jobNo} revived and given the new apply link (review date {$newDeleteAt})."
+                    : "Job {$jobNo} given the new apply link (review date {$newDeleteAt}).",
+            ];
         });
 
-        return [
-            'ok' => true,
-            'revived' => $retired,
-            'message' => $retired
-                ? "Job {$jobNo} revived and given the new apply link (review date {$newDeleteAt})."
-                : "Job {$jobNo} given the new apply link (review date {$newDeleteAt}).",
-        ];
+        return $result;
     }
 
     /**
@@ -185,6 +226,8 @@ class JobMatchApplier
 
             return [
                 'job_no' => (string) ($job['job_no'] ?? ''),
+                // The two values the relink guard re-checks under lock.
+                'job_status_id' => (int) ($job['job_status_id'] ?? 0),
                 'title' => (string) ($job['title'] ?? ''),
                 'company_name' => (string) ($job['company_name'] ?? ''),
                 'address' => (string) ($job['address'] ?? ''),

@@ -22,6 +22,10 @@ class JobMatchController extends Controller
             'new_link' => 'required|string|max:2048',
             'delete_in_days' => 'required|integer|min:1|max:365',
             'return_to' => 'nullable|in:xml,manual',
+            // What the card showed. The write is refused if the row no longer
+            // matches these, so a stale card cannot overwrite someone's edit.
+            'expect_status' => 'required|integer|min:1|max:6',
+            'expect_link' => 'nullable|string|max:8192',
         ]);
 
         $user = session('user');
@@ -31,6 +35,8 @@ class JobMatchController extends Controller
             $data['job_no'],
             $data['new_link'],
             (int) $data['delete_in_days'],
+            (int) $data['expect_status'],
+            (string) ($data['expect_link'] ?? ''),
             'xml-import',
             $actor
         );
