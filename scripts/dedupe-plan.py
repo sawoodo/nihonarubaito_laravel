@@ -11,14 +11,21 @@ For every group of published jobs that are certainly the same listing:
   TRASH  the newer copies: status 5, Expire_Date = now, updated_at = now,
          one job_status_history row each
 
-CERTAIN (planned)  both published, same normalised company, same category,
-                   same wage, and EITHER
-                     - the same specific address (contains a street number), OR
-                     - the same station AND near-identical titles,
-                   and never two specific addresses that differ
-                   (that is two shops of one agency).
-REVIEW  (listed)   same company + same station, but title or wage differs, or
-                   only one side has a specific address. Never planned.
+CERTAIN (planned)  both published, same normalised company, same category, and
+                     - the SAME source listing (same offer id / same link) and
+                       the same wage, OR
+                     - same wage AND the same place (same specific address, or
+                       same station when neither has a specific address) AND
+                       the same ROLE: the title part before " at ", compared
+                       as word sets, similarity >= 0.80 -- or >= 0.90 when the
+                       two jobs point at DIFFERENT source listings.
+                   Never two specific addresses that differ (two shops).
+                   Why the role check on the address path too: for staffing
+                   agencies the stored address is often the agency office,
+                   so one address covers many different placements
+                   (2026-10-27 plan: 182 of 389 trashes were such placements).
+REVIEW  (listed)   same place and company, but role, wage or a one-sided
+                   specific address differs. Never planned.
 
 INPUT   published.tsv  (mysql --batch export, see /dedupe-published)
 OUTPUT  <out>/plan.csv        one row per job in a planned group
@@ -53,7 +60,28 @@ dc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(dc)          # reuse read_tsv, norm_addr, norm_company, norm_link
 
 TITLE_MIN = 0.80
+TITLE_SAME_LISTING_DIFFERS = 0.90
 STATION = re.compile(r'([一-龯々ぁ-んァ-ヶー・]{1,12}駅)')
+
+
+KANJI_NUM = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+
+
+def kanji_chome(addr):
+    """北栄一丁目13-17 -> 北栄1丁目13-17 (1-99), before the shared normaliser."""
+    def conv(m):
+        t = m.group(1)
+        if t == '十':
+            n = 10
+        elif t.startswith('十'):
+            n = 10 + KANJI_NUM[t[1]]
+        elif '十' in t:
+            n = KANJI_NUM[t[0]] * 10 + (KANJI_NUM[t[2]] if len(t) == 3 else 0)
+        else:
+            n = KANJI_NUM[t]
+        return f'{n}丁目'
+    return re.sub(r'([一二三四五六七八九]?十?[一二三四五六七八九]?)丁目',
+                  lambda m: conv(m) if m.group(1) else m.group(0), addr or '')
 
 
 def station_key(s):
@@ -66,8 +94,15 @@ def wage_key(w):
     return ''.join(re.findall(r'\d+', unicodedata.normalize('NFKC', w or '')))
 
 
+def role_part(t):
+    """The role, not the place: titles are '<role> at <place>'."""
+    t = unicodedata.normalize('NFKC', t or '')
+    i = t.lower().rfind(' at ')
+    return t[:i] if i > 0 else t
+
+
 def title_tokens(t):
-    t = unicodedata.normalize('NFKC', t or '').lower().replace('&', ' and ')
+    t = role_part(t).lower().replace('&', ' and ')
     t = re.sub(r'[\d,]+円', ' ', t)
     t = re.sub(r'[^a-z0-9\s]', ' ', t)
     stop = {'part', 'time', 'job', 'jobs', 'at', 'in', 'the', 'a', 'an', 'and', 'for', 'of', 'station'}
@@ -85,22 +120,35 @@ def specific(addr):
     return bool(re.search(r'\d', addr)) and len(addr) >= 6
 
 
+def same_listing(a, b):
+    """True / False when both links identify a source listing, else None."""
+    if a['_link'] and a['_link'] == b['_link']:
+        return True
+    if a['_sid'] and b['_sid']:
+        return a['_sid'] == b['_sid']
+    return None
+
+
 def judge(a, b):
     """'certain', 'review' or None for two published jobs of one company."""
     if a['_cat'] != b['_cat']:
         return None
+    listing = same_listing(a, b)
+    if listing is True:
+        # The source says one listing. A different wage on the same link
+        # usually means a translator pasted the wrong link -- two real jobs.
+        return 'certain' if (a['_wage'] and a['_wage'] == b['_wage']) else 'review'
     sa, sb = specific(a['_addr']), specific(b['_addr'])
     if sa and sb and a['_addr'] != b['_addr']:
         return None                                   # two shops of one agency
-    same_wage = a['_wage'] and a['_wage'] == b['_wage']
-    if sa and sb and a['_addr'] == b['_addr']:
-        return 'certain' if same_wage else 'review'
-    if a['_st'] and a['_st'] == b['_st']:
-        sim = title_sim(a['title'], b['title'])
-        if same_wage and sim >= TITLE_MIN and not (sa != sb):
-            return 'certain'
-        return 'review'
-    return None
+    same_place = (sa and sb) or (not sa and not sb and a['_st'] and a['_st'] == b['_st'])
+    if not same_place:
+        return 'review' if (a['_st'] and a['_st'] == b['_st']) else None
+    same_wage = bool(a['_wage']) and a['_wage'] == b['_wage']
+    need = TITLE_SAME_LISTING_DIFFERS if listing is False else TITLE_MIN
+    if same_wage and title_sim(a['title'], b['title']) >= need:
+        return 'certain'
+    return 'review'
 
 
 def sql_str(v):
@@ -119,7 +167,9 @@ def main():
     rows = [r for r in dc.read_tsv(a.published) if r['job_status_id'] == '3']
     for r in rows:
         r['_co'] = dc.norm_company(r['company_name'])
-        r['_addr'] = dc.norm_addr(r['address'])
+        r['_addr'] = dc.norm_addr(kanji_chome(r['address']))
+        r['_link'] = dc.norm_link(r['apply_link'])
+        r['_sid'] = dc.source_id(r['apply_link'])
         r['_st'] = station_key(r['station'])
         r['_wage'] = wage_key(r['wage'])
         r['_cat'] = r['job_category_id']
@@ -148,7 +198,8 @@ def main():
         buckets = defaultdict(list)
         for j in js:
             for k in {('a', j['_addr']) if specific(j['_addr']) else None,
-                      ('s', j['_st']) if j['_st'] else None} - {None}:
+                      ('s', j['_st']) if j['_st'] else None,
+                      ('l', j['_sid'] or j['_link']) if (j['_sid'] or j['_link']) else None} - {None}:
                 buckets[k].append(j)
         seen = set()
         for b in buckets.values():
