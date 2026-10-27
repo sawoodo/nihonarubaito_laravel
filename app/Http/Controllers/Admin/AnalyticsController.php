@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Job;
 use App\Models\User;
 use App\Services\JobDeduplicator;
+use App\Support\JobRetirement;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +23,14 @@ class AnalyticsController extends Controller
         if (session('user')->email !== self::SUPER_ADMIN_EMAIL) {
             abort(403, 'You are not authorized.');
         }
+    }
+
+    /** Who to record against a retirement, in job_status_history's terms. */
+    private function retirementActor(): string
+    {
+        $u = session('user');
+
+        return $u->email ?? ('user:' . ($u->id ?? '?'));
     }
 
     public function dashboard(Request $request)
@@ -721,12 +731,14 @@ class AnalyticsController extends Controller
             return response()->json(['success' => false, 'message' => 'Missing job_id'], 400);
         }
 
-        $updated = DB::table('jobs')
-            ->where('id', $jobId)
-            ->where('job_status_id', 3)
-            ->update(['job_status_id' => 5]);
+        // Was a bare DB::table() update: no Expire_Date, and DB::table()
+        // does not touch updated_at either, so a job trashed here had no
+        // retirement date of any kind and its expired page was dated by an
+        // old edit. JobRetirement records the date and the history row.
+        $r = JobRetirement::retireByIds([$jobId], Job::STATUS_TRASHED, 'expiring-page',
+            $this->retirementActor(), 'trashed from the expiring-jobs page');
 
-        return response()->json(['success' => true, 'trashed' => $updated]);
+        return response()->json(['success' => true, 'trashed' => count($r['retired'])]);
     }
 
     public function employees(Request $request)
@@ -1199,9 +1211,20 @@ class AnalyticsController extends Controller
             return response()->json(['success' => false, 'message' => 'Missing parameters.']);
         }
 
-        DB::table('jobs')->whereIn('id', $trashIds)->update(['job_status_id' => 5]);
+        // Two fixes in one. This wrote no retirement date, and it had NO
+        // status guard — `whereIn('id', …)` alone would trash a job in any
+        // state, including one already expired, overwriting the date of its
+        // real retirement. JobRetirement only acts on a job still in status
+        // 2, 3 or 6, so an already-retired job is left alone and reported as
+        // skipped rather than silently re-retired.
+        $r = JobRetirement::retireByIds($trashIds, Job::STATUS_TRASHED, 'duplicates',
+            $this->retirementActor(), "duplicate; kept job id {$keepId}");
 
-        return response()->json(['success' => true, 'trashed' => count($trashIds)]);
+        return response()->json([
+            'success' => true,
+            'trashed' => count($r['retired']),
+            'skipped' => count($r['skipped']),
+        ]);
     }
 
     public function dismissGroup(Request $request)
