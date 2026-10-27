@@ -314,9 +314,26 @@ def main():
                 f.write(f"INSERT INTO job_apply_link_history (job_no, old_apply_link, new_apply_link, source, actor, batch, created_at)\n"
                         f"  SELECT {sql_str(k['job_no'])}, {sql_str(k['apply_link'])}, {sql_str(new_link)}, 'dedupe', 'claude-code', {sql_str(B)}, NOW() "
                         f"FROM DUAL WHERE @r = 1;\n")
+            # The keeper's row must NOT hang on ROW_COUNT(). An UPDATE that
+            # changes nothing reports 0 rows, so a keeper whose link was
+            # already the newest and whose delete_at was already the latest
+            # got no audit row at all -- that is how batch dd-20261027-072837
+            # ended up with 189 keeper rows for 212 keepers.
+            #
+            # Guard instead on the two things that actually define "the merge
+            # happened to THIS keeper": every duplicate of the group was
+            # trashed by this batch, and the keeper is still published holding
+            # the link the merge intends it to have. Together they are true
+            # exactly when the merge took effect -- including when the keeper
+            # needed no change -- and false when the keeper drifted since the
+            # export and its UPDATE was skipped, so the row is never written
+            # about a state that did not happen.
+            keeper_merged = (f"{all_trashed}\n  AND EXISTS (SELECT 1 FROM jobs WHERE job_no = {sql_str(k['job_no'])} "
+                             f"AND job_status_id = 3 AND apply_link <=> {sql_str(new_link)})")
             f.write(f"INSERT INTO job_status_history (job_no, old_status, new_status, old_delete_at, new_delete_at, source, actor, reason, batch, created_at)\n"
                     f"  SELECT {sql_str(k['job_no'])}, 3, 3, {sql_str(k['delete_at'])}, {sql_str(g['new_delete_at'])}, 'dedupe', 'claude-code', "
-                    f"{sql_str('kept; merged ' + ', '.join(d['job_no'] for d in g['dups']))}, {sql_str(B)}, NOW() FROM DUAL WHERE @r = 1;\n")
+                    f"{sql_str('kept; merged ' + ', '.join(d['job_no'] for d in g['dups']))}, {sql_str(B)}, NOW()\n"
+                    f"  FROM DUAL WHERE {keeper_merged};\n")
         f.write(f"SELECT 'trashed' AS what, COUNT(*) AS n FROM job_status_history WHERE batch = {sql_str(B)} AND new_status = 5\n"
                 f"UNION ALL SELECT 'kept', COUNT(*) FROM job_status_history WHERE batch = {sql_str(B)} AND new_status = 3\n"
                 f"UNION ALL SELECT 'relinked', COUNT(*) FROM job_apply_link_history WHERE batch = {sql_str(B)};\n"
