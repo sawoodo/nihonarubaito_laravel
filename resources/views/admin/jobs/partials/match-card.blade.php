@@ -8,6 +8,12 @@
     delete_in_days  the review window the form asked for
     return_to       'xml' | 'manual'
 
+  NOTE: always leave a space before a closing Blade directive. Blade's pattern
+  requires a non-word character before the "@", so a directive written straight
+  after a letter (as in the word "ago" with no space) stays literal text, the
+  block it should close is left open, and the view only breaks when it is
+  actually rendered -- a parse error no linter on the Blade source will catch.
+
   A 'certain' match gets the "Update job N with this link" button. A 'review'
   match never does: offer 118120821 is stored on two unrelated employers
   because a wrong link was pasted onto one of them, so one click would relink
@@ -52,7 +58,7 @@
                         </a>
                         <small>
                             {{ $match['status_label'] }}@if (! is_null($match['retired_days_ago']))
-                                {{ $match['retired_days_ago'] }} day{{ $match['retired_days_ago'] == 1 ? '' : 's' }} ago@endif
+                                {{ $match['retired_days_ago'] }} day{{ $match['retired_days_ago'] == 1 ? '' : 's' }} ago @endif
                             &middot; matched on {{ $match['reason'] }}
                         </small>
                     </h4>
@@ -114,7 +120,7 @@
                         #{{ $match['job_no'] }}
                     </a>
                     — {{ \Illuminate\Support\Str::limit($match['title'], 70) }}
-                    — {{ $match['status_label'] }}@if (! is_null($match['retired_days_ago'])), retired {{ $match['retired_days_ago'] }}d ago@endif
+                    — {{ $match['status_label'] }}@if (! is_null($match['retired_days_ago'])), retired {{ $match['retired_days_ago'] }}d ago @endif
                     — <em>{{ $match['reason'] }}</em>
                 </li>
             @endforeach
