@@ -4,6 +4,74 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-27 — the XML import now checks whether we already have the job
+
+**What:** `App\Services\JobMatcher` ports the merge rules proven on the whole
+published table in `scripts/dedupe-plan.py` (batch dd-20261027-072837, 221
+merges) to PHP and runs them at import — single XML, bulk XML and manual create.
+A certain match shows a card naming the existing job and offers to give it the
+new apply link, reviving it if it was retired within 60 days. Commits `39af369`
+(merge) and `51e1355` (a Blade fix found in testing). Spec:
+`docs/specs/import-duplicate-check.md`. No migration.
+
+**Why:** the old check could not see most repeats. It matched an exact
+`apply_link` on statuses 2–3, or company + prefecture + the first 30 characters
+of the title on 1–3. shigotoin rotates its offer ids, so the link match misses;
+"Izakaya Hall and Kitchen" and "Izakaya Hall & Kitchen" differ in the first 30
+characters; and a job retired last week was invisible. Over 24–26 Oct, 41 of
+157 new jobs were repeats it had let through.
+
+**Measured on the last 7 days (553 imports):** 69 would be blocked (12.5%), 145
+would get an informational notice, 339 nothing. Three quarters of the blocks
+point at a job retired 3–56 days ago — the re-translations the old check could
+not see at all. `/check-translator-duplicates 7` flagged 144 on the same
+snapshot; the matcher blocks 69 because it also requires the same role and the
+same starting wage, which is what keeps agency-office collisions out.
+
+**Four things worth keeping:**
+
+- **Blade will not compile a directive glued to a word character.** `ago@endif`
+  stayed in the output as literal text, the enclosing `@if` was left open, and
+  the compiled view became a PHP parse error. Nothing on the source catches it:
+  `php -l` does not read Blade, the directives balance when counted, and a
+  hand-written preview renderer compiled it happily. It would have surfaced in
+  production the first time a card actually appeared — the page loads fine until
+  there is a match to show. **Test a Blade change by rendering it through the
+  engine, not by reading it.** One `php` script that boots the app and calls
+  `View::make(...)->render()` is enough, and it is read-only.
+- **A card must never point at a job we merged away.** The dedupe batch left 221
+  trashed copies that still hold the apply link and address that matched, so a
+  fresh import matched the *copy*; "Update job <copy>" would have revived it and
+  recreated by hand the duplicate the merge removed. Candidates with a
+  `{source: 'dedupe', reason: 'duplicate of job K'}` history row are swapped for
+  K. Measured: 3 certain cards pointed at a copy, now 0.
+- **A blocking card whose button then refuses is worse than no card.** A match
+  on a job retired beyond the 60-day revive window is now a notice, not a block
+  — `relink()` would not revive it. Rare but real: 19 imports in 90 days.
+- **The write is guarded like the Link Check apply step.** The card carries the
+  status and apply_link it displayed; `relink()` re-reads the row FOR UPDATE and
+  refuses unless both still match, because two people work the same import queue
+  under one account. Verified live: a deliberately stale card wrote nothing and
+  `job_status_history` stayed at 4,125 rows.
+
+**Also:** the one-click "Create Anyway" bypass is gone — a second copy now costs
+a typed reason, recorded against the new job. Bulk import never updates
+anything; a certain match is saved as a Draft titled `[SAME AS N]`, and
+publishing is refused while that prefix remains. `relink` is admin/manager only:
+the `admin` middleware admits advertisers (roles 1, 2 **and** 4), which is wider
+than it looks. `JobDeduplicator::findByApplyLink()` and `findDuplicate()` now
+have no callers; `findAllDuplicateGroups()` still serves the Duplicates page.
+`refreshExisting()` carries a never-call warning — it overwrites `date`, the
+posted date.
+
+**Deploy note:** every file went up as `<name>.new`, was md5-checked and
+`php -l`-ed while still inert, then renamed over the original — new classes and
+partials first, `routes/web.php` last. No `config:clear`; the config cache is
+still the Oct 24 build. Backup of the 6 overwritten files:
+`~/deploy-backups/import-dup-check-20261027-134130/`. **No cache purge needed:
+nothing public changed.**
+---
+
 ## 2026-10-27 — jobs:auto-trash no longer expires anything by default
 
 **What:** `app/Console/Commands/AutoTrashJobs.php` (commit a986614). The default
