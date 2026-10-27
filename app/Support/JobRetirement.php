@@ -30,22 +30,39 @@ use Illuminate\Support\Facades\DB;
  *      same guarded set that was updated — never from ROW_COUNT(), which is 0
  *      for an update that changes nothing and silently dropped 23 audit rows
  *      in the 2026-10-27 dedupe batch.
- *   3. A live-status guard. Only a job in status 2, 3 or 6 can be retired, so
- *      a stale page or a double-submitted form cannot re-retire a job and
- *      overwrite the date of its original retirement. The Duplicates page's
- *      keep-and-trash had no status check at all and would trash a job in any
- *      state; it gets the guard by coming through here.
+ *   3. A status guard. A job can be expired only from live (2, 3 or 6), and
+ *      trashed from live or from already-expired. So a stale page or a
+ *      double-submitted form cannot re-retire a job and overwrite the date of
+ *      its original retirement, while the ordinary housekeeping move of
+ *      trashing an expired job still works and KEEPS that first date, leaving
+ *      the 90-day clock where it was. Un-trashing (5 -> 4) is refused. The
+ *      Duplicates page's keep-and-trash had no status check at all and would
+ *      trash a job in any state; it gets the guard by coming through here.
  *
  * `date` is never touched. It is the posted date — the model's CREATED_AT,
  * `datePosted` in the JobPosting schema, and the sort key of every listing.
  */
 class JobRetirement
 {
-    /** A job can only be retired from one of these. */
+    /** Live: a job in one of these can be retired. */
     public const LIVE_STATUSES = [Job::STATUS_PENDING, Job::STATUS_PUBLISHED, Job::STATUS_QUOTA_FULL];
 
     /** The statuses this class is willing to move a job to. */
     public const RETIRED_STATUSES = [Job::STATUS_EXPIRED, Job::STATUS_TRASHED];
+
+    /**
+     * Which statuses each target may be reached from.
+     *
+     * Trashing an already-expired job is ordinary housekeeping -- both show
+     * the same page to a visitor -- so 4 -> 5 is allowed, and the original
+     * Expire_Date is KEPT so the 90-day clock does not restart. The reverse
+     * is not: 5 -> 4 would un-trash a job through a method named retire(),
+     * and nothing in the admin asks for it.
+     */
+    private const ALLOWED_FROM = [
+        Job::STATUS_EXPIRED => self::LIVE_STATUSES,
+        Job::STATUS_TRASHED => [...self::LIVE_STATUSES, Job::STATUS_EXPIRED],
+    ];
 
     /**
      * Retire jobs, recording the date and the reason.
@@ -85,34 +102,58 @@ class JobRetirement
         DB::transaction(function () use ($jobNos, $toStatus, $source, $actor, $reason, $batch, $guard, &$retired) {
             $now = now();
 
+            $from = self::ALLOWED_FROM[$toStatus];
+
             // Read the rows under lock FIRST. These are the jobs that will be
             // updated and the jobs that get a history row — one set, so the
             // audit trail cannot drift from what actually changed.
             $read = DB::table('jobs')
                 ->whereIn('job_no', $jobNos)
-                ->whereIn('job_status_id', self::LIVE_STATUSES);
+                ->whereIn('job_status_id', $from);
             if ($guard) {
                 $guard($read);
             }
-            $rows = $read->lockForUpdate()->get(['job_no', 'job_status_id', 'delete_at']);
+            // id, not job_no: `job_no` has only a NON-UNIQUE index and three
+            // legacy CI3-era values are shared by two rows each (7vyeO, BtQuB,
+            // uOr8M). No live row shares one today, so no current path can hit
+            // it, but writing by the id of the rows actually read means a
+            // future duplicate cannot widen one request into two retirements.
+            $rows = $read->lockForUpdate()->get(['id', 'job_no', 'job_status_id', 'delete_at']);
 
             if ($rows->isEmpty()) {
                 return;
             }
 
-            $nos = $rows->pluck('job_no')->map('strval')->all();
+            // Two groups, because the retirement DATE is handled differently.
+            // A job going live -> retired is being retired now, so it takes
+            // Expire_Date = now even if it is carrying a stale value from an
+            // earlier life (a revived job, a quota-full row). A job that is
+            // already expired keeps the date of that first retirement, so
+            // trashing it later does not restart its 90-day clock; NOW() is
+            // used only when it has no date at all.
+            $live = $rows->filter(fn ($r) => in_array((int) $r->job_status_id, self::LIVE_STATUSES, true));
+            $already = $rows->reject(fn ($r) => in_array((int) $r->job_status_id, self::LIVE_STATUSES, true));
 
-            $write = DB::table('jobs')
-                ->whereIn('job_no', $nos)
-                ->whereIn('job_status_id', self::LIVE_STATUSES);
-            if ($guard) {
-                $guard($write);
+            foreach ([[$live, $now, self::LIVE_STATUSES],
+                [$already, DB::raw('COALESCE(`Expire_Date`, ' . self::quoted($now) . ')'), [Job::STATUS_EXPIRED]],
+            ] as [$set, $expireValue, $fromStatuses]) {
+                if ($set->isEmpty()) {
+                    continue;
+                }
+                $write = DB::table('jobs')
+                    ->whereIn('id', $set->pluck('id')->all())
+                    ->whereIn('job_status_id', $fromStatuses);
+                if ($guard) {
+                    $guard($write);
+                }
+                $write->update([
+                    'job_status_id' => $toStatus,
+                    'Expire_Date' => $expireValue,
+                    'updated_at' => $now,
+                ]);
             }
-            $write->update([
-                'job_status_id' => $toStatus,
-                'Expire_Date' => $now,
-                'updated_at' => $now,
-            ]);
+
+            $nos = $rows->pluck('job_no')->map('strval')->all();
 
             $history = [];
             foreach ($rows as $row) {
@@ -145,6 +186,12 @@ class JobRetirement
         ];
     }
 
+    /** A datetime as a SQL literal, for the one place a raw expression is needed. */
+    private static function quoted(\Carbon\Carbon $t): string
+    {
+        return "'" . $t->format('Y-m-d H:i:s') . "'";
+    }
+
     /**
      * Same, for screens that hold jobs.id rather than job_no (the Expiring and
      * Duplicates pages both post ids). Resolving here keeps the id/job_no
@@ -161,13 +208,13 @@ class JobRetirement
         string $reason,
         ?string $batch = null
     ): array {
-        $jobNos = DB::table('jobs')
-            ->whereIn('id', array_map('intval', $ids))
-            ->pluck('job_no')
-            ->map('strval')
-            ->all();
+        // Resolve to job_no only to report back; the retirement itself is
+        // keyed on these ids, so a shared job_no cannot pull in a second row.
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $jobNos = DB::table('jobs')->whereIn('id', $ids)->pluck('job_no')->map('strval')->all();
 
-        return self::retire($jobNos, $toStatus, $source, $actor, $reason, $batch);
+        return self::retire($jobNos, $toStatus, $source, $actor, $reason, $batch,
+            fn ($q) => $q->whereIn('id', $ids));
     }
 
     /**
