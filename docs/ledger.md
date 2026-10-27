@@ -38,8 +38,25 @@ shigotoin). A date is not evidence.
   never reaches the `.htaccess` deny. Re-confirmed today: that URL still returns
   **200**. The report now lives at `dirname(base_path(), 2) . '/private/overdue'`
   = `<domain>/private/overdue/`, a sibling of `public_html`, mode 0700. Verified
-  404 over HTTPS, with the homepage 200 as control. **Anything under
-  `storage/app/` should be assumed reachable until proven otherwise.**
+  404 over HTTPS, with the homepage 200 as control. **nginx serves `.xml` and
+  `.html` from disk past the `storage/.htaccess` deny — never write files of
+  those types under `public_html`.** The Oct 13 entry below found this for
+  `.xml`; a full sweep of `storage/` on Oct 27 added `.html` to the list and
+  confirmed `.log`, `.php`, `.gitignore` and all 1,898 extensionless session
+  files are denied. That sweep also found 59 stale prefecture-content backups
+  sitting in `storage/*.html` since February — Kanagawa, the page held in
+  reserve, among them. Moved to `private/blog-backups/`.
+
+  **Moving the file did not end the exposure.** Both URLs kept returning 200
+  with the exact old byte counts and `x-proxy-cache: HIT` at
+  `cache-control: max-age=15552000` — a 180-day cache of files that no longer
+  existed on disk. The origin was already correct, which a cache-busted request
+  (`?cb=…` → 403) proved while the plain URL still served the content. After the
+  Site Tools Dynamic Cache flush + CDN purge: both 403, `x-proxy-cache: MISS`,
+  homepage 200 with a HIT on the second call, so the cache layer was alive and
+  the 403s were genuinely the origin. **A static-file exposure is closed by the
+  purge, not by the `mv`** — and the second homepage control is what
+  distinguishes "denied" from "the whole site is WAF-blocked".
 
 **`--expire` also fixed two audit gaps** the old code had: it now sets
 `Expire_Date` (not just `updated_at`, which made its output indistinguishable
