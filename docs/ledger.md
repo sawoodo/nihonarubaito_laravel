@@ -4,6 +4,56 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-27 — jobs:auto-trash no longer expires anything by default
+
+**What:** `app/Console/Commands/AutoTrashJobs.php` (commit a986614). The default
+run — the one the 02:00 schedule calls — now lists the overdue jobs and changes
+nothing. Expiring moved behind `--expire`, for manual use after a link check.
+
+**Why:** `delete_at` is OUR review date, not the employer's closing date. It is
+set to "now + N days" at creation and at every extension, and nothing in that
+path ever looks at the source listing. So expiring on the date alone meant "we
+have not checked this job lately" was rendered to readers and to Google as "this
+job has ended" — noindex, then a 301, then a 410. The link checks of Oct 22 and
+Oct 24 measured the gap directly: of the jobs that had reached their `delete_at`,
+most were still open at the source and were extended; the ones genuinely gone had
+to be PROVEN gone by fetching the listing (404 on baitoru, a closing notice on
+shigotoin). A date is not evidence.
+
+**Three things this run taught, worth keeping:**
+
+- **A silent log proved nothing.** The old command's only trace was
+  `Log::info("jobs:auto-trash expired N jobs")`, and production runs
+  `LOG_LEVEL=error`, so that line was discarded every time. Zero log hits could
+  not distinguish "ran and found nothing" from "never ran". The one line it now
+  writes is `Log::error`, and only when N > 0 — not because anything is wrong,
+  but because `error` is the only level that reaches `laravel.log` here.
+- **The filesystem answered what the log could not.** `storage/app/sitemap.xml`
+  had mtime `Oct 27 02:30`, matching `sitemap:generate`'s scheduled time, which
+  proved `schedule:run` is wired and firing. Hence the CSV is written on EVERY
+  default run, even an empty one: its mtime is the proof the next person needs.
+- **The report goes outside the web root.** First draft wrote to
+  `storage/app/overdue/`. On Oct 13 `/laravel/storage/app/sitemap.xml` was
+  publicly fetchable — nginx serves some static extensions straight from disk and
+  never reaches the `.htaccess` deny. Re-confirmed today: that URL still returns
+  **200**. The report now lives at `dirname(base_path(), 2) . '/private/overdue'`
+  = `<domain>/private/overdue/`, a sibling of `public_html`, mode 0700. Verified
+  404 over HTTPS, with the homepage 200 as control. **Anything under
+  `storage/app/` should be assumed reachable until proven otherwise.**
+
+**`--expire` also fixed two audit gaps** the old code had: it now sets
+`Expire_Date` (not just `updated_at`, which made its output indistinguishable
+from a manual bulk expire) and writes one `job_status_history` row per job under
+batch `at-YYYYMMDD-HHMMSS`, inside a transaction that rolls back rather than
+leave jobs expired with no record of why.
+
+**State after deploy:** 5,636 published, 0 overdue, 0 due by tomorrow. First real
+test is **2026-10-30 (175 jobs)**, then ~200–380/day. The CSV from each night is
+the queue for the link check — expiry is now a decision someone makes, with
+evidence, not a date arriving.
+
+---
+
 ## 2026-10-27 — 221 duplicate published jobs merged (batch dd-20261027-072837)
 
 **What:** 212 groups of published jobs that were the same listing. The oldest job
