@@ -7,6 +7,7 @@ use App\Models\Job;
 use App\Models\Language;
 use App\Models\Prefecture;
 use App\Models\SecondaryApply;
+use App\Support\JobRetirement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
@@ -209,9 +210,14 @@ class JobController extends Controller
             abort(410);
         }
 
-        // Calculate days since expiration: prefer Expire_Date, fallback to updated_at, then date
+        // Which date the tier counts from. Expire_Date is the truth when it is
+        // there; JobRetirement::tierDate() supplies the fallback for the 97,229
+        // rows retired before every path recorded one — the review date capped
+        // at now, so an undated page gets its closed-page period instead of an
+        // early 301, and a delete_at in the future can never produce a
+        // negative age. See docs/specs/retirement-date.md.
         // Use startOfDay() to match SQL DATEDIFF behavior (count calendar day boundaries)
-        $expiredDate = $job->Expire_Date ?? $job->updated_at ?? $job->date;
+        $expiredDate = JobRetirement::tierDate($job);
         $daysSinceExpired = $expiredDate
             ? (int) abs(now()->startOfDay()->diffInDays($expiredDate->copy()->startOfDay()))
             : 999;

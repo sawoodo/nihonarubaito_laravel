@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\WageType;
 use App\Services\JobMatchApplier;
 use App\Services\JobMatcher;
+use App\Support\JobRetirement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -548,19 +549,40 @@ class JobController extends Controller
 
     public function expire(string $jobNo)
     {
-        Job::where('job_no', $jobNo)->update([
-            'job_status_id' => Job::STATUS_EXPIRED,
-            'Expire_Date' => now(),
-        ]);
+        // Through JobRetirement so it also leaves a job_status_history row —
+        // this path already wrote Expire_Date but no record of who or why.
+        $r = JobRetirement::retire([$jobNo], Job::STATUS_EXPIRED, 'admin',
+            $this->retirementActor(), 'expired from the admin job list');
+
+        if (! $r['retired']) {
+            return redirect('/admin/jobs')->with('error',
+                "Job {$jobNo} is not live — nothing was changed.");
+        }
 
         return redirect('/admin/jobs')->with('success', 'Job has been expired.');
     }
 
     public function trash(string $jobNo)
     {
-        Job::where('job_no', $jobNo)->update(['job_status_id' => Job::STATUS_TRASHED]);
+        // This path recorded nothing at all: no Expire_Date, so the expired
+        // page was dated by whenever the row was last edited.
+        $r = JobRetirement::retire([$jobNo], Job::STATUS_TRASHED, 'admin',
+            $this->retirementActor(), 'trashed from the admin job list');
+
+        if (! $r['retired']) {
+            return redirect('/admin/jobs')->with('error',
+                "Job {$jobNo} is not live — nothing was changed.");
+        }
 
         return redirect('/admin/jobs')->with('success', 'Job has been trashed.');
+    }
+
+    /** Who to record against a retirement, in job_status_history's terms. */
+    private function retirementActor(): string
+    {
+        $u = session('user');
+
+        return $u->email ?? ('user:' . ($u->id ?? '?'));
     }
 
     public function toggleFeatured(Request $request, string $jobNo)

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Job;
+use App\Support\JobRetirement;
 use App\Services\MovedTargetMatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -263,28 +264,23 @@ class LinkCheckController extends Controller
         $trash = $sorted->reject(fn ($j) => $j->job_no === $keep->job_no);
 
         $batch = 'lca-' . date('Ymd-His');
-        $done = 0;
-        $skipped = 0;
 
-        DB::transaction(function () use ($trash, $batch, $actor, $keep, &$done, &$skipped) {
-            foreach ($trash as $j) {
-                // updated_at IS bumped: the expired-page tier is computed from
-                // Expire_Date ?? updated_at, so a stale value would send a
-                // just-trashed page straight to a 301 or 410.
-                $n = DB::table('jobs')->where('job_no', $j->job_no)
-                    ->where('job_status_id', Job::STATUS_PUBLISHED)
-                    ->update(['job_status_id' => Job::STATUS_TRASHED, 'updated_at' => now()]);
-
-                if ($n === 0) {
-                    $skipped++;
-                    continue;
-                }
-                $done++;
-                $this->logStatusChange($j->job_no, Job::STATUS_PUBLISHED, Job::STATUS_TRASHED,
-                    $j->delete_at, $j->delete_at, 'link-check-action', $actor, $batch,
-                    "duplicate of job {$keep->job_no} (same final offer)");
-            }
-        });
+        // JobRetirement sets Expire_Date, which this path did not: it bumped
+        // updated_at for the tier calculation but left the retirement date
+        // itself empty, so the tier still depended on when the row was last
+        // edited. It writes the history row too, so the logStatusChange call
+        // that used to live here would now be a duplicate.
+        $r = JobRetirement::retire(
+            $trash->pluck('job_no')->all(),
+            Job::STATUS_TRASHED,
+            'link-check-action',
+            $actor,
+            "duplicate of job {$keep->job_no} (same final offer)",
+            $batch,
+            fn ($q) => $q->where('job_status_id', Job::STATUS_PUBLISHED)
+        );
+        $done = count($r['retired']);
+        $skipped = count($r['skipped']);
 
         // the group is settled either way
         $this->resolveForJobs($jobNos, 'kept_' . substr($data['action'], 5), $actor);
@@ -320,17 +316,24 @@ class LinkCheckController extends Controller
         $actor = $this->actorName();
 
         if ($data['action'] === 'expire') {
-            $n = DB::table('jobs')->where('job_no', $job->job_no)
-                ->where('job_status_id', Job::STATUS_PUBLISHED)
-                ->where('apply_link', $job->apply_link)
-                ->update(['job_status_id' => Job::STATUS_EXPIRED, 'updated_at' => now()]);
+            // Through JobRetirement for Expire_Date and the history row. The
+            // apply_link staleness check this screen relies on is passed as
+            // the guard, so it is applied to both the read and the write and
+            // stays as atomic as it was.
+            $r = JobRetirement::retire(
+                [$job->job_no],
+                Job::STATUS_EXPIRED,
+                'link-check-action',
+                $actor,
+                'expired from link-check review',
+                $batch,
+                fn ($q) => $q->where('job_status_id', Job::STATUS_PUBLISHED)
+                    ->where('apply_link', $job->apply_link)
+            );
 
-            if ($n === 0) {
+            if (! $r['retired']) {
                 return back()->with('error', "Job {$job->job_no} changed — nothing was changed.");
             }
-            $this->logStatusChange($job->job_no, Job::STATUS_PUBLISHED, Job::STATUS_EXPIRED,
-                $job->delete_at, $job->delete_at, 'link-check-action', $actor, $batch,
-                'expired from link-check review');
 
             $this->resolveForJobs([$job->job_no], 'expired', $actor);
 
