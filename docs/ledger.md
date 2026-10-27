@@ -4,6 +4,88 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-27 — every retirement records its date; 2,947 pages stop redirecting early
+
+**What:** `App\Support\JobRetirement` is now the one way a job reaches status 4
+or 5. It sets `Expire_Date`, bumps `updated_at`, and writes one
+`job_status_history` row per job actually changed, guarded on the job still
+being in a status it may be retired from. The expired-page tier falls back to
+`GREATEST(updated_at, LEAST(delete_at, now()))` when `Expire_Date` is absent.
+Commits `69afd00`, `117f75f`, merged `d35812a`. Spec:
+`docs/specs/retirement-date.md`. No migration.
+
+**Why.** The tiers in `JobController::handleExpiredJob()` count days from
+`Expire_Date ?? updated_at ?? date`, but only some retirement paths wrote
+`Expire_Date`. The per-job Trash button wrote none; both `AnalyticsController`
+paths used `DB::table()`, which does not touch `updated_at` either. So a job
+trashed last week could be dated by an edit months earlier and **skip its
+90-day closed page, going straight to a 301 or a 410**.
+
+Measured: of 108,332 retired jobs, **97,229 had no `Expire_Date`** (96,369 of
+96,773 trashed). Against GSC (26 Jul–25 Oct, `/jobs/` filter, 989 job pages,
+3,785 clicks), **197 of the 542 retired pages that still earn clicks were
+redirecting early**, carrying 727 clicks — 42% of retired-page traffic. Job
+141660 (bed making, Hakata) was dated 271 days old and had been retired 20; a
+page redirecting for nine months does not earn 41 clicks in 92 days.
+
+**Rolled out:** 2,947 pages move from 301 back to the closed page, 793 from 410
+to a 301. All 20 of the worst offenders verified flipping Tier 2 → Tier 1 at
+real ages of 5–67 days.
+
+**Four things worth keeping:**
+
+- **A bug you cannot see in the data is still provable.** The 4 → 5 transition
+  and its "keep the first retirement date" rule had no failing row to point at,
+  so it was tested by running the real write inside a transaction always rolled
+  back in a `finally`, re-reading the row afterwards to prove nothing stuck.
+  Four cases, history count back to 4,127 each time. **A rolled-back
+  transaction is a legitimate test on production** and far better than
+  deploying write logic that has never run.
+- **`jobs.job_no` has no unique index.** Three legacy CI3-era values are shared
+  by two rows each (7vyeO, BtQuB, uOr8M). Found because a test picked a status-4
+  row and read back a status-5 one under the same `job_no`. No live row shares
+  one, so nothing current could hit it, but every write now keys on `jobs.id`
+  — the id of the rows actually read under lock — so a future duplicate cannot
+  widen one request into two retirements.
+- **`php -l` does not find a missing `use`.** `AnalyticsController` had no
+  `App\Models\Job` import while the new code called `Job::STATUS_TRASHED`; the
+  file lints clean and would have failed only when that button was pressed.
+  After adding a class reference, check the file's imports, not just its syntax.
+- **Count a mysqldump's rows by its tuples, not its INSERTs.** `--complete-insert`
+  batches many rows per statement, so `grep -c "INSERT INTO"` returned 2 for 713
+  rows; and a `[(,]\(` pattern misses the first tuple of each statement, which
+  is preceded by `VALUES `. The honest count is
+  `VALUES \((\d+),` plus `,\((\d+),` — 2 + 711 = 713, matching the 713 distinct
+  ids.
+
+**Behaviour deliberately kept loose:** retiring an already-expired job to
+trashed is allowed and **keeps the first `Expire_Date`**, so the 90-day clock
+does not restart — both statuses show a visitor the same page, and refusing it
+would only confuse the team. `5 -> 4` is refused. And for a job retired before
+its review date came due, the fallback pins the age at 0 until `delete_at`
+passes, so its clock effectively starts there; that errs only towards keeping
+the closed page longer.
+
+**Gate 2 backfill:** 713 jobs — every one from the three `bulk-expire` batches
+of 22–24 Oct, which ran on the generator before it wrote `Expire_Date` — took
+their exact retirement time from `job_status_history` (471 dated 22 Oct, 242
+dated 24 Oct). Guarded on `Expire_Date IS NULL` and status unchanged; 713
+backfilled, 0 left. Backup `~/exports/retirement-backfill-20261027-150417/`
+(`--complete-insert`, 713 rows verified), rollback alongside it, not run. That
+is 0.7% of the 97,229 undated rows — the fallback carries the other 99.3%.
+
+**Verified live:** 141660, 141766 and 154939 now serve 200 + `noindex` at ~40 KB
+(were 301); two backfilled pages likewise; one control per tier behaves
+(Tier 1 → 200/40 KB, Tier 2 → 301, Tier 3 → 410); published control and
+homepage unchanged; `laravel.log` byte-identical, 0 entries today; config cache
+still the Oct 24 build.
+
+**Deploy note:** five files up as `<name>.new`, md5-checked and `php -l`-ed
+while inert, then renamed — `JobRetirement.php` first because all four
+controllers reference it, and `app/Http/Controllers/JobController.php` last
+because it serves every public job page.
+---
+
 ## 2026-10-27 — the XML import now checks whether we already have the job
 
 **What:** `App\Services\JobMatcher` ports the merge rules proven on the whole
