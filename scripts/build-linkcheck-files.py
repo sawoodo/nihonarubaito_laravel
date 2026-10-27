@@ -58,6 +58,20 @@ def sql_str(v):
     return "'" + s.replace('\\', '\\\\').replace("'", "''") + "'"
 
 
+def sql_or_null(v):
+    """NULL for empty / NULL exports, else a quoted literal."""
+    s = '' if v is None else str(v).strip()
+    return 'NULL' if s in ('', 'NULL') else sql_str(s)
+
+
+def sql_ts(v):
+    """'2026-10-23T03:20:00Z' (link-check, UTC) -> '2026-10-23 03:20:00'.
+    The server and MySQL both run in UTC, so no shift is needed."""
+    s = '' if v is None else str(v).strip()
+    m = __import__('re').match(r'^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})', s)
+    return sql_str(f'{m.group(1)} {m.group(2)}') if m else 'NULL'
+
+
 def ids_in(url):
     import re
     return set(re.findall(r'\d{5,}', url or ''))
@@ -235,26 +249,38 @@ def main():
         fh.write('-- updated_at is bumped because the expired-page tier (noindex /\n')
         fh.write('-- 301 / 410) is computed from Expire_Date ?? updated_at ?? date;\n')
         fh.write('-- a stale updated_at sends a just-expired page straight to 410.\n\n')
-        fh.write('START TRANSACTION;\n\n')
-        for job_no, _r, job in expire:
-            fh.write(f'UPDATE jobs SET job_status_id={STATUS_EXPIRED}, updated_at=NOW() '
+        fh.write('-- Expire_Date = NOW() starts the expiry clock on the real retirement\n')
+        fh.write('-- day; one job_status_history row per expired job, same batch id.\n')
+        fh.write('-- Self-contained: runs in one transaction, prints its counts, commits.\n\n')
+        fh.write('SET NAMES utf8mb4;\nSTART TRANSACTION;\n\n')
+        for job_no, r, job in expire:
+            reason = f"link-check {r.get('classification', '')}: source page closed"
+            fh.write(f'UPDATE jobs SET job_status_id={STATUS_EXPIRED}, Expire_Date=NOW(), updated_at=NOW() '
                      f'WHERE job_no={sql_str(job_no)} AND job_status_id=3 '
-                     f'AND apply_link={sql_str(job.get("apply_link"))};\n')
-        fh.write(f'\n-- verify {len(expire)} before COMMIT:\n')
-        fh.write('-- SELECT ROW_COUNT();\n')
-        fh.write('-- COMMIT;   -- or ROLLBACK;\n')
+                     f'AND apply_link={sql_str(job.get("apply_link"))};\n'
+                     f'SET @r = ROW_COUNT();\n'
+                     f'INSERT INTO job_status_history (job_no, old_status, new_status, old_delete_at, '
+                     f'new_delete_at, source, actor, reason, batch, source_checked_at, created_at) '
+                     f'SELECT {sql_str(job_no)}, 3, {STATUS_EXPIRED}, {sql_or_null(job.get("delete_at"))}, '
+                     f'{sql_or_null(job.get("delete_at"))}, \'bulk-expire\', \'claude-code\', {sql_str(reason)}, '
+                     f'{sql_str(batch)}, {sql_ts(r.get("checked_at"))}, NOW() FROM DUAL WHERE @r = 1;\n')
+        fh.write(f"\nSELECT COUNT(*) AS expired_in_batch FROM job_status_history "
+                 f"WHERE batch={sql_str(batch)} AND new_status={STATUS_EXPIRED};\n")
+        fh.write(f'-- expected: {len(expire)}. Fewer = rows changed since the scan; they were skipped.\n')
+        fh.write('COMMIT;\n')
 
     rollback_path = out(f'expire-{args.host}-{ts}-rollback.sql')
     with open(rollback_path, 'w', encoding='utf-8') as fh:
-        fh.write(f'-- ROLLBACK for {batch}. Restores status 3 and the exact\n')
-        fh.write('-- updated_at each row had before the expire.\n\n')
-        fh.write('START TRANSACTION;\n\n')
+        fh.write(f'-- ROLLBACK for {batch}. Restores status 3, the original Expire_Date and\n')
+        fh.write('-- updated_at of each row this batch expired, and deletes its history rows.\n\n')
+        fh.write('SET NAMES utf8mb4;\nSTART TRANSACTION;\n\n')
         for job_no, _r, job in expire:
             u = (job.get('updated_at') or '').strip()
             setu = f', updated_at={sql_str(u)}' if u else ''
-            fh.write(f'UPDATE jobs SET job_status_id=3{setu} '
-                     f'WHERE job_no={sql_str(job_no)} AND job_status_id={STATUS_EXPIRED};\n')
-        fh.write('\n-- COMMIT;\n')
+            fh.write(f'UPDATE jobs SET job_status_id=3, Expire_Date={sql_or_null(job.get("expire_date"))}{setu} '
+                     f'WHERE job_no={sql_str(job_no)} AND job_status_id={STATUS_EXPIRED} '
+                     f'AND job_no IN (SELECT job_no FROM job_status_history WHERE batch={sql_str(batch)});\n')
+        fh.write(f'\nDELETE FROM job_status_history WHERE batch={sql_str(batch)};\nCOMMIT;\n')
 
     held_path = out(f'held-{args.host}-{ts}.csv')
     with open(held_path, 'w', newline='', encoding='utf-8') as fh:
@@ -267,7 +293,7 @@ def main():
               rollback_path, held_path):
         print(f'  {p}  ({os.path.getsize(p)}B)')
     print('\nNothing applied. The upload CSV goes to the admin Link Check page; '
-          'the expire SQL runs precheck -> apply -> verify -> COMMIT.')
+          'the expire SQL runs precheck -> apply (it commits and prints its count).')
 
 
 if __name__ == '__main__':
