@@ -31,7 +31,7 @@ use App\Services\JobMatcher as M;
 // NOTE: long options declared with '::' (optional value) must be passed as
 // --unique-csv=PATH. With a space, getopt silently returns nothing and the
 // whole control section is skipped without an error.
-$opts = getopt('', ['recent:', 'pool:', 'unique-csv::', 'samples::', 'job::']);
+$opts = getopt('', ['recent:', 'pool:', 'unique-csv::', 'samples::', 'job::', 'dedupe-map::', 'dump-certain::']);
 if (! isset($opts['recent'], $opts['pool'])) {
     fwrite(STDERR, "usage: matcher-replay.php --recent R.tsv --pool P.tsv [--unique-csv C.csv]\n");
     exit(2);
@@ -86,12 +86,28 @@ function ts(?string $v): ?int
 $recent = array_map([M::class, 'prepare'], read_tsv($opts['recent']));
 $pool = array_map([M::class, 'prepare'], read_tsv($opts['pool']));
 
+// job_no => keeper job_no, from job_status_history {source: 'dedupe'}. The
+// matcher reads this from the database; the replay is offline, so it is
+// exported alongside recent/pool.
+$keeperOf = [];
+if (! empty($opts['dedupe-map'])) {
+    foreach (read_tsv($opts['dedupe-map']) as $r) {
+        if (preg_match('/duplicate of job (\\d+)/', (string) $r['reason'], $m)) {
+            $keeperOf[(string) $r['job_no']] = $m[1];
+        }
+    }
+    printf("dedupe map: %s  (%d trashed copies)\n", $opts['dedupe-map'], count($keeperOf));
+}
+
 printf("recent : %s  (%d jobs)\n", $opts['recent'], count($recent));
 printf("pool   : %s  (%d jobs)\n\n", $opts['pool'], count($pool));
 
 // ── index the pool the way findMatches queries it ───────────────────────
-$byLink = $bySid = $byPrefCat = [];
+$byLink = $bySid = $byPrefCat = $byNo = [];
 $now = time();
+foreach ($pool as $i => $j) {
+    $byNo[(string) $j['job_no']] = $i;
+}
 foreach ($pool as $i => $j) {
     if ($j['_link'] !== '') {
         $byLink[$j['_link']][] = $i;
@@ -125,7 +141,32 @@ foreach ($recent as $a) {
 
     $best = null;
     $matches = [];
+    $swapped = 0;
+
+    // Point at the keeper, not the copy our own dedupe batch trashed.
+    $resolved = [];
     foreach (array_keys($cand) as $i) {
+        $no = (string) $pool[$i]['job_no'];
+        if ((int) $pool[$i]['job_status_id'] === 5 && isset($keeperOf[$no])) {
+            $k = $keeperOf[$no];
+            if (! isset($byNo[$k])) {
+                continue;                       // keeper not in the pool — drop
+            }
+            $kr = $pool[$byNo[$k]];
+            if (in_array((int) $kr['job_status_id'], RETIRED, true)) {
+                $r = ts($kr['Expire_Date'] ?: $kr['updated_at']);
+                if ($r === null || $r < $now - M::REVIVE_WINDOW_DAYS * 86400) {
+                    continue;
+                }
+            }
+            $resolved[$byNo[$k]] = true;
+            $swapped++;
+            continue;
+        }
+        $resolved[$i] = true;
+    }
+
+    foreach (array_keys($resolved) as $i) {
         $b = $pool[$i];
         if ((string) $b['job_no'] === (string) $a['job_no']) {
             continue;
@@ -148,6 +189,15 @@ foreach ($recent as $a) {
         if ($listing === true && ! $sameCompany) {
             $v = 'review';          // strong, not proof — never one-click
         }
+
+        // Retired beyond the revive window: information only. relink() would
+        // refuse, so a blocking card would be a dead end.
+        if (in_array((int) $b['job_status_id'], RETIRED, true)) {
+            $r = ts($b['Expire_Date'] ?: $b['updated_at']);
+            if ($r === null || $r < $now - M::REVIVE_WINDOW_DAYS * 86400) {
+                $v = 'review';
+            }
+        }
         $matches[] = ['job' => $b, 'verdict' => $v,
             'reason' => M::reason($a, $b, $listing, $sameCompany)];
         if ($v === 'certain') {
@@ -157,7 +207,8 @@ foreach ($recent as $a) {
         }
     }
 
-    $results[(string) $a['job_no']] = ['job' => $a, 'verdict' => $best ?? 'none', 'matches' => $matches];
+    $results[(string) $a['job_no']] = ['job' => $a, 'verdict' => $best ?? 'none',
+        'matches' => $matches, 'swapped' => $swapped];
 }
 
 // ── one job in full, for a hand check ───────────────────────────────────
@@ -205,6 +256,17 @@ foreach ($results as $r) {
         }
     }
 }
+$swaps = 0;
+$swapJobs = 0;
+foreach ($results as $r) {
+    if ($r['swapped'] > 0) {
+        $swaps += $r['swapped'];
+        $swapJobs++;
+    }
+}
+printf("\ndedupe-trashed copies redirected to their keeper: %d candidate(s) across %d import(s)\n",
+    $swaps, $swapJobs);
+
 echo "\nthe job each CERTAIN card points at:\n";
 arsort($byStatus);
 foreach ($byStatus as $label => $c) {
@@ -224,6 +286,25 @@ echo "\nmatched on:\n";
 arsort($byReason);
 foreach ($byReason as $label => $c) {
     printf("  %-46s %4d\n", $label, $c);
+}
+
+// ── every CERTAIN card, for cross-checking against other exports ───────
+if (! empty($opts['dump-certain'])) {
+    $fh = fopen($opts['dump-certain'], 'w');
+    fputcsv($fh, ['new_job_no', 'target_job_no', 'target_status', 'reason'], ',', '"', '\\');
+    foreach ($results as $jn => $r) {
+        if ($r['verdict'] !== 'certain') {
+            continue;
+        }
+        foreach ($r['matches'] as $m) {
+            if ($m['verdict'] === 'certain') {
+                fputcsv($fh, [$jn, $m['job']['job_no'],
+                    STATUS_LABEL[(int) $m['job']['job_status_id']] ?? '?', $m['reason']], ',', '"', '\\');
+            }
+        }
+    }
+    fclose($fh);
+    printf("\ncertain cards written to %s\n", $opts['dump-certain']);
 }
 
 // ── samples ─────────────────────────────────────────────────────────────

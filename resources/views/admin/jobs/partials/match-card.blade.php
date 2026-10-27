@@ -17,6 +17,13 @@
     $m = session('job_matches');
     $certain = $m['certain'] ?? [];
     $review = $m['review'] ?? [];
+    // Only an admin or manager may relink; JobMatchController refuses anyone
+    // else, so do not show a button that will bounce them.
+    $mayRelink = in_array(
+        (int) (session('user')->role_id ?? 0),
+        [\App\Models\User::ROLE_ADMIN, \App\Models\User::ROLE_MANAGER],
+        true
+    );
 @endphp
 
 @if ($certain)
@@ -67,6 +74,7 @@
                         </tr>
                     </table>
 
+                    @if ($mayRelink)
                     <form action="{{ url('admin/jobs/match/relink') }}" method="POST" class="tw-inline">
                         @csrf
                         <input type="hidden" name="job_no" value="{{ $match['job_no'] }}">
@@ -81,6 +89,11 @@
                             @if (! is_null($match['retired_days_ago'])) (and republish it) @endif
                         </button>
                     </form>
+                    @else
+                        <p class="text-muted tw-mb-0">
+                            <em>Ask an admin or manager to give job #{{ $match['job_no'] }} this link.</em>
+                        </p>
+                    @endif
                 </div>
             @endforeach
         </div>

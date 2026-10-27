@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Services\JobMatchApplier;
 use Illuminate\Http\Request;
 
@@ -12,6 +13,10 @@ use Illuminate\Http\Request;
  * It is a POST of its own rather than part of the import form, because the
  * import form creates a job and this one must not: the whole point is that no
  * second copy is created. The translator's pasted XML is discarded.
+ *
+ * Admins and managers only. The 'admin' middleware admits advertisers too
+ * (User::isBackendUser covers roles 1, 2 and 4), and an advertiser has no
+ * business rewriting the apply link of a job that may not be theirs.
  */
 class JobMatchController extends Controller
 {
@@ -29,6 +34,12 @@ class JobMatchController extends Controller
         ]);
 
         $user = session('user');
+
+        if (! in_array((int) ($user->role_id ?? 0), [User::ROLE_ADMIN, User::ROLE_MANAGER], true)) {
+            return redirect('/admin/jobs')
+                ->with('error', 'Only an admin or manager can change a job\'s apply link.');
+        }
+
         $actor = $user->email ?? ('user:' . ($user->id ?? '?'));
 
         $result = JobMatchApplier::relink(

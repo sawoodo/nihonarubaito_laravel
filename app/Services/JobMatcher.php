@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Job;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -43,6 +44,13 @@ class JobMatcher
 
     /** Retired statuses, matched only inside the revive window. */
     public const RETIRED_STATUSES = [4, 5];
+
+    /** Every column the matcher and the card need from a candidate row. */
+    private const CANDIDATE_COLUMNS = [
+        'id', 'job_no', 'title', 'company_name', 'address', 'station', 'wage',
+        'job_category_id', 'prefecture_id', 'area_id', 'apply_link',
+        'job_status_id', 'date', 'delete_at', 'updated_at', 'Expire_Date',
+    ];
 
     private const TRACKING = '/^(utm_|fbclid|gclid|src$|ref$|aff|vc_|sid$)/i';
 
@@ -374,7 +382,7 @@ class JobMatcher
         $self = (string) ($new['job_no'] ?? '');
 
         $out = [];
-        foreach (self::candidateRows($a) as $row) {
+        foreach (self::resolveDedupeTrashed(self::candidateRows($a)) as $row) {
             $b = self::prepare((array) $row);
             if ($self !== '' && (string) $b['job_no'] === $self) {
                 continue;
@@ -410,6 +418,18 @@ class JobMatcher
                 ? self::daysAgo($b['Expire_Date'] ?? null, $b['updated_at'] ?? null)
                 : null;
 
+            // A match on a job retired longer ago than the revive window can
+            // only ever be information. JobMatchApplier::relink() refuses to
+            // revive it -- reviving a page gone for a year is a resurrection,
+            // not a relink -- so a 'certain' card would block creation behind
+            // a button that then says no. Creating the new job is the right
+            // outcome, and 'review' allows it. Only the listing-id candidate
+            // set reaches back this far; the prefecture+category set is
+            // already bounded by the window.
+            if ($retired !== null && $retired > self::REVIVE_WINDOW_DAYS) {
+                $verdict = 'review';
+            }
+
             $out[] = [
                 'job' => $row,
                 'verdict' => $verdict,
@@ -428,6 +448,85 @@ class JobMatcher
         usort($out, fn (array $x, array $y) => $rank($x) <=> $rank($y));
 
         return $out;
+    }
+
+    /**
+     * Swap a candidate that our OWN dedupe batch trashed for the job it was
+     * merged into.
+     *
+     * On 2026-10-27 batch dd-20261027-072837 trashed 221 published copies,
+     * each with a job_status_history row {source: 'dedupe', reason: 'duplicate
+     * of job K'}. Those copies still hold the apply link and address that
+     * matched, so a fresh import of the same vacancy matches the COPY.
+     * Offering "Update job <copy>" would revive it -- recreating by hand the
+     * duplicate the merge removed, and leaving keeper and copy both live with
+     * the same link.
+     *
+     * So the card points at K instead. If K is gone, or K is itself retired
+     * beyond the revive window, the candidate is dropped: there is nothing
+     * useful to offer and a dead end is worse than no card.
+     *
+     * @param  array<int,object>  $rows
+     * @return array<int,object>
+     */
+    private static function resolveDedupeTrashed(array $rows): array
+    {
+        $trashedNos = [];
+        foreach ($rows as $row) {
+            if ((int) $row->job_status_id === Job::STATUS_TRASHED) {
+                $trashedNos[] = (string) $row->job_no;
+            }
+        }
+        if (! $trashedNos) {
+            return $rows;
+        }
+
+        // Latest dedupe row per trashed copy. A status-5 job trashed by hand
+        // or by the link check has no 'dedupe' row and is left alone.
+        $keeperOf = [];
+        $history = DB::table('job_status_history')
+            ->whereIn('job_no', $trashedNos)
+            ->where('source', 'dedupe')
+            ->where('new_status', Job::STATUS_TRASHED)
+            ->orderBy('id')
+            ->get(['job_no', 'reason']);
+
+        foreach ($history as $h) {
+            if (preg_match('/duplicate of job (\\d+)/', (string) $h->reason, $m)) {
+                $keeperOf[(string) $h->job_no] = $m[1];        // last row wins
+            }
+        }
+        if (! $keeperOf) {
+            return $rows;
+        }
+
+        $keepers = DB::table('jobs')
+            ->whereIn('job_no', array_values(array_unique($keeperOf)))
+            ->get(self::CANDIDATE_COLUMNS)
+            ->keyBy('job_no');
+
+        $out = [];
+        foreach ($rows as $row) {
+            $no = (string) $row->job_no;
+            if (! isset($keeperOf[$no])) {
+                $out[$row->id] = $row;
+                continue;
+            }
+
+            $keeper = $keepers[$keeperOf[$no]] ?? null;
+            if (! $keeper) {
+                continue;                        // keeper gone — nothing to offer
+            }
+            if (in_array((int) $keeper->job_status_id, self::RETIRED_STATUSES, true)) {
+                $days = self::daysAgo($keeper->Expire_Date ?? null, $keeper->updated_at ?? null);
+                if ($days === null || $days > self::REVIVE_WINDOW_DAYS) {
+                    continue;
+                }
+            }
+            $out[$keeper->id] = $keeper;         // keyed by id, so one keeper once
+        }
+
+        return array_values($out);
     }
 
     /** Why these two matched, in the words the card shows. */
@@ -472,11 +571,7 @@ class JobMatcher
      */
     private static function candidateRows(array $a): array
     {
-        $cols = [
-            'id', 'job_no', 'title', 'company_name', 'address', 'station', 'wage',
-            'job_category_id', 'prefecture_id', 'area_id', 'apply_link',
-            'job_status_id', 'date', 'delete_at', 'updated_at', 'Expire_Date',
-        ];
+        $cols = self::CANDIDATE_COLUMNS;
 
         $rows = [];
 

@@ -354,6 +354,13 @@ class JobController extends Controller
             // Update & Publish
             if ($request->input('update_and_publish')) {
                 $freshJob = Job::where('job_no', $jobNo)->first();
+
+                // Checked AFTER the update, so editing the prefix out of the
+                // title in the same submit publishes normally.
+                if ($blocked = $this->duplicateDraftBlock($freshJob)) {
+                    return redirect("/admin/jobs/{$jobNo}/edit")->with('error', $blocked);
+                }
+
                 $this->createFbPost($freshJob);
                 Job::where('job_no', $jobNo)->update(['job_status_id' => Job::STATUS_PUBLISHED]);
 
@@ -446,6 +453,29 @@ class JobController extends Controller
         return redirect('/admin/jobs')->with('success', 'Job has been cloned successfully.');
     }
 
+    /**
+     * A bulk XML import saves a job the matcher recognised as a Draft titled
+     * "[SAME AS N] ...". The prefix is the warning, so it must not reach the
+     * public site: publishing with it still attached would put our own
+     * duplicate marker in the page title, the <title> tag and the sitemap.
+     *
+     * Resolve it instead -- relink job N and delete the draft, or edit the
+     * title if it really is a different job.
+     */
+    private const SAME_AS_PREFIX = '[SAME AS ';
+
+    private function duplicateDraftBlock($job): ?string
+    {
+        if (! str_starts_with((string) $job->title, self::SAME_AS_PREFIX)) {
+            return null;
+        }
+
+        return 'This job is marked as a duplicate of an existing one, so it cannot be published '
+            . 'while its title still starts with "' . self::SAME_AS_PREFIX . '". Either update that '
+            . "job with this one's apply link and delete this draft, or edit the title if it really "
+            . 'is a different job.';
+    }
+
     public function publish(string $jobNo)
     {
         $user = session('user');
@@ -459,6 +489,9 @@ class JobController extends Controller
         }
         if (! $job->area_id || $job->area_id == 0) {
             return redirect('/admin/jobs')->with('error', 'Please set the area before publishing.');
+        }
+        if ($blocked = $this->duplicateDraftBlock($job)) {
+            return redirect('/admin/jobs')->with('error', $blocked);
         }
 
         $this->createFbPost($job);
