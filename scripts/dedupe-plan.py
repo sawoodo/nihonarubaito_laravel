@@ -12,8 +12,8 @@ For every group of published jobs that are certainly the same listing:
          one job_status_history row each
 
 CERTAIN (planned)  both published, same normalised company, same category, and
-                     - the SAME source listing (same offer id / same link) and
-                       the same wage, OR
+                     - the SAME source listing (same offer id / same link),
+                       the same wage and role similarity >= 0.50, OR
                      - same wage AND the same place (same specific address, or
                        same station when neither has a specific address) AND
                        the same ROLE: the title part before " at ", compared
@@ -61,6 +61,7 @@ _spec.loader.exec_module(dc)          # reuse read_tsv, norm_addr, norm_company,
 
 TITLE_MIN = 0.80
 TITLE_SAME_LISTING_DIFFERS = 0.90
+SAME_LISTING_ROLE_MIN = 0.50
 STATION = re.compile(r'([一-龯々ぁ-んァ-ヶー・]{1,12}駅)')
 
 
@@ -141,7 +142,11 @@ def judge(a, b):
     if listing is True:
         # The source says one listing. A different wage on the same link
         # usually means a translator pasted the wrong link -- two real jobs.
-        return 'certain' if (a['_wage'] and a['_wage'] == b['_wage']) else 'review'
+        # Very different roles on one listing usually mean one copy was
+        # mistranslated: hold those for a person to fix the title first.
+        if a['_wage'] and a['_wage'] == b['_wage'] and title_sim(a['title'], b['title']) >= SAME_LISTING_ROLE_MIN:
+            return 'certain'
+        return 'review'
     sa, sb = specific(a['_addr']), specific(b['_addr'])
     if sa and sb and a['_addr'] != b['_addr']:
         return None                                   # two shops of one agency
