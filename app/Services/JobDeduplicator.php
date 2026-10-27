@@ -113,8 +113,20 @@ class JobDeduplicator
             ->first();
     }
 
-        /**
+    /**
      * Refresh an existing job's expiry date instead of creating a duplicate.
+     *
+     * NEVER CALL THIS AS IT STANDS. It sets `date` = now(), and `date` is the
+     * job's posted date: it is the CREATED_AT of this model, it feeds
+     * `datePosted` in the JobPosting schema, and it orders every listing.
+     * Overwriting it would tell Google a months-old vacancy was posted today
+     * and would move the job to the top of its listing on a link refresh.
+     *
+     * Verified unused on 2026-10-27: no caller anywhere in app/, resources/ or
+     * routes/, so the defect has never run in production. A revive belongs in
+     * JobMatcher's "update job N with this link" path, which touches
+     * apply_link, delete_at and job_status_id only — see
+     * docs/specs/import-duplicate-check.md.
      */
     public static function refreshExisting(int $existingJobId, ?string $newDeleteAt = null): void
     {

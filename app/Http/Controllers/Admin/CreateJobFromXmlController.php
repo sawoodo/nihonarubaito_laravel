@@ -10,7 +10,8 @@ use App\Models\Prefecture;
 use App\Models\User;
 use App\Models\Area;
 use App\Services\AddressLocationResolver;
-use App\Services\JobDeduplicator;
+use App\Services\JobMatchApplier;
+use App\Services\JobMatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -116,41 +117,38 @@ class CreateJobFromXmlController extends Controller
                 $xml, $langId, $featured, $sendEmail, $applyLink, $imgLink, $deleteInDays, $userId, $imgId
             );
 
-            // Tier 0: apply_link check (highest priority — exact URL match)
-            if (!$request->input('skip_duplicate_check')) {
-                $existingByUrl = JobDeduplicator::findByApplyLink($applyLink);
-                if ($existingByUrl) {
-                    return back()->withInput()->with('duplicate_warning', [
-                        'level'   => 'high',
-                        'label'   => 'EXACT URL MATCH',
-                        'job_no'  => $existingByUrl->job_no,
-                        'title'   => $existingByUrl->title,
-                        'date'    => $existingByUrl->date,
-                        'status'  => $existingByUrl->job_status_id == 3 ? 'Published' : 'Pending',
-                    ]);
-                }
-            }
+            // Have we already got this job? JobMatcher ports the rules proven
+            // on the whole published table in scripts/dedupe-plan.py; the two
+            // checks this replaces (exact apply_link on statuses 2-3, and
+            // company + prefecture + the first 30 characters of the title on
+            // 1-3) missed 41 of 157 real repeats over 24-26 Oct 2026.
+            $matches = JobMatcher::findMatches($jobData);
+            $certain = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'certain'));
+            $review  = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'review'));
 
-                        // Duplicate check (skip if user confirmed)
-            if (!$request->input('skip_duplicate_check')) {
-                $dup = JobDeduplicator::findDuplicate(
-                    $jobData['company_name'],
-                    (int) $jobData['prefecture_id'],
-                    (int) $jobData['area_id'],
-                    $jobData['title']
-                );
-                if ($dup) {
-                    $levelLabels = ['high' => 'HIGH', 'medium' => 'MEDIUM', 'low' => 'LOW'];
-                    $statusLabels = [1 => 'Draft', 2 => 'Pending', 3 => 'Published'];
-                    $dupJob = $dup['job'];
-                    return back()->withInput()->with('duplicate_warning', [
-                        'level'   => $dup['level'],
-                        'label'   => $levelLabels[$dup['level']] ?? $dup['level'],
-                        'job_no'  => $dupJob->job_no,
-                        'title'   => $dupJob->title,
-                        'date'    => $dupJob->date,
-                        'status'  => $statusLabels[$dupJob->job_status_id] ?? 'Unknown',
-                    ]);
+            $createAnyway = (bool) $request->input('skip_duplicate_check');
+            $anywayReason = trim((string) $request->input('duplicate_reason', ''));
+            $matchedJobNo = (string) $request->input('matched_job_no', '');
+
+            if ($certain) {
+                $card = [
+                    'certain'        => JobMatchApplier::forCard($certain),
+                    'review'         => JobMatchApplier::forCard($review),
+                    'new_link'       => $applyLink,
+                    'delete_in_days' => $deleteInDays,
+                    'return_to'      => 'xml',
+                ];
+
+                // No one-click bypass any more: creating a second copy of a
+                // job we already have needs a typed reason, and that reason is
+                // written to job_status_history against the new job.
+                if (! $createAnyway) {
+                    return back()->withInput()->with('job_matches', $card);
+                }
+                if (mb_strlen($anywayReason) < 10) {
+                    return back()->withInput()
+                        ->withErrors(['duplicate_reason' => 'Say in a few words why this is a different job (at least 10 characters).'])
+                        ->with('job_matches', $card);
                 }
             }
 
@@ -163,8 +161,29 @@ class CreateJobFromXmlController extends Controller
             $this->lastLocationVerdict = $locationVerdict;
             $this->logLocationVerdict((string) $job->job_no);
 
+            $actor = $user->email ?? ('user:' . $user->id);
+
+            if ($certain && $createAnyway && $anywayReason !== '') {
+                JobMatchApplier::logCreatedDespite(
+                    (string) $job->job_no,
+                    $matchedJobNo !== '' ? $matchedJobNo : (string) $certain[0]['job']->job_no,
+                    $anywayReason,
+                    Job::STATUS_PENDING,
+                    'xml-import',
+                    $actor
+                );
+            }
+
+            $created = 'Job has been successfully created from XML.';
+            if ($review) {
+                // Not certain, so it was never blocked — but say so, because
+                // one of these may still be the same vacancy.
+                $nos = implode(', #', array_map(fn ($m) => (string) $m['job']->job_no, $review));
+                $created .= ' Similar job(s) worth checking: #' . $nos . '.';
+            }
+
             $redirect = redirect("/admin/jobs/{$job->job_no}/edit")
-                ->with('success', 'Job has been successfully created from XML.')
+                ->with('success', $created)
                 ->with('location_verdict', $locationVerdict);
 
             // Unresolved prefecture: the job is saved but cannot be published until a
@@ -267,31 +286,21 @@ class CreateJobFromXmlController extends Controller
             $dupCount = 0;
             $correctedCount = 0;
             $reviewCount = 0;
+            $sameAs = [];
             foreach ($jobs as $index => $jobData) {
-                // Tier 0: apply_link check (exact URL match)
-                $existingByUrl = JobDeduplicator::findByApplyLink($jobData['apply_link'] ?? '');
-                if ($existingByUrl) {
-                    $jobData['title'] = '[DUPLICATE URL] ' . $jobData['title'];
-                    $jobData['job_status_id'] = Job::STATUS_DRAFT;
-                    $dupCount++;
-                    $job = Job::create($jobData);
-                    $job->update(['job_no' => (string) $job->id]);
-                    $this->attachTagsFromXml($xmlObjects[$index], $job->id);
-                    $this->lastLocationVerdict = $locationVerdicts[$index] ?? [];
-                    $this->logLocationVerdict((string) $job->job_no);
-                    continue;
-                }
+                // Bulk NEVER updates an existing job: a relink is a judgement
+                // about one vacancy and belongs to a person. A certain match
+                // is saved as a Draft naming the job it duplicates, so the
+                // reviewer can relink by hand and delete the draft.
+                $matches = JobMatcher::findMatches($jobData);
+                $certain = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'certain'));
 
-                $dup = JobDeduplicator::findDuplicate(
-                    $jobData['company_name'],
-                    (int) $jobData['prefecture_id'],
-                    (int) $jobData['area_id'],
-                    $jobData['title']
-                );
-                if ($dup) {
-                    $jobData['title'] = '[POSSIBLE DUPLICATE] ' . $jobData['title'];
+                if ($certain) {
+                    $matchNo = (string) $certain[0]['job']->job_no;
+                    $jobData['title'] = "[SAME AS {$matchNo}] " . $jobData['title'];
                     $jobData['job_status_id'] = Job::STATUS_DRAFT;
                     $dupCount++;
+                    $sameAs[] = "same as {$matchNo}: " . $certain[0]['reason'];
                 }
                 $job = Job::create($jobData);
                 $job->update(['job_no' => (string) $job->id]);
@@ -305,7 +314,8 @@ class CreateJobFromXmlController extends Controller
 
             $msg = count($jobs) . ' jobs created.';
             if ($dupCount > 0) {
-                $msg .= " {$dupCount} flagged as possible duplicates (saved as Draft).";
+                $msg .= " {$dupCount} already exist and were saved as Draft, not published: "
+                    . implode('; ', $sameAs) . '.';
             }
             if ($correctedCount > 0) {
                 $msg .= " {$correctedCount} location field(s) corrected from the address.";
