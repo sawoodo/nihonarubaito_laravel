@@ -106,6 +106,11 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::post('jobs/attach-image', [Admin\JobController::class, 'attachImage']);
     Route::post('jobs/detach-image', [Admin\JobController::class, 'detachImage']);
     Route::post('jobs/get-areas', [Admin\JobController::class, 'getAreas']);
+
+    // "Update job N with this link" on the import duplicate card. POST only:
+    // it writes apply_link, delete_at and (on a revival) job_status_id.
+    Route::post('jobs/match/relink', [Admin\JobMatchController::class, 'relink'])
+        ->name('admin.jobs.match.relink');
     // CI3-compatible aliases (JS uses these URL patterns)
     Route::post('jobs/image/attach', [Admin\JobController::class, 'attachImage']);
     Route::post('jobs/image/detach', [Admin\JobController::class, 'detachImage']);

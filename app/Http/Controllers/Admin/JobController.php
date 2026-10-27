@@ -13,7 +13,8 @@ use App\Models\Prefecture;
 use App\Models\TransExpPayment;
 use App\Models\User;
 use App\Models\WageType;
-use App\Services\JobDeduplicator;
+use App\Services\JobMatchApplier;
+use App\Services\JobMatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -150,32 +151,47 @@ class JobController extends Controller
 
             $validated = $request->validate($rules);
 
-            // Duplicate check (skip if user confirmed via hidden field)
-            if (! $request->input('skip_duplicate_check')) {
-                $dup = JobDeduplicator::findDuplicate(
-                    $validated['company_name'],
-                    (int) $validated['prefecture_id'],
-                    (int) $validated['area_id'],
-                    $validated['title']
-                );
-                if ($dup) {
-                    $levelLabels = ['high' => 'HIGH', 'medium' => 'MEDIUM', 'low' => 'LOW'];
-                    $statusLabels = [1 => 'Draft', 2 => 'Pending', 3 => 'Published'];
-                    $dupJob = $dup['job'];
-                    $dupWarning = [
-                        'level' => $dup['level'],
-                        'label' => $levelLabels[$dup['level']] ?? $dup['level'],
-                        'job_no' => $dupJob->job_no,
-                        'title' => $dupJob->title,
-                        'date' => $dupJob->date,
-                        'status' => $statusLabels[$dupJob->job_status_id] ?? 'Unknown',
-                    ];
+            $deleteInDays = max(1, (int) $request->input('delete_at', 60));
 
-                    return back()->withInput()->with('duplicate_warning', $dupWarning);
+            // Same check as the XML import. This form had NO apply-link check
+            // at all before 2026-10-27 — it called findDuplicate() only, so
+            // the identical apply link could be pasted into a new job and
+            // nothing stopped it.
+            $matches = JobMatcher::findMatches([
+                'title'           => $validated['title'],
+                'company_name'    => $validated['company_name'],
+                'address'         => $validated['address'],
+                'station'         => $validated['station'],
+                'wage'            => $validated['wage'],
+                'job_category_id' => $validated['job_category_id'],
+                'prefecture_id'   => $validated['prefecture_id'],
+                'apply_link'      => (string) $request->input('apply_link', ''),
+            ]);
+            $certain = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'certain'));
+            $review  = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'review'));
+
+            $createAnyway = (bool) $request->input('skip_duplicate_check');
+            $anywayReason = trim((string) $request->input('duplicate_reason', ''));
+            $matchedJobNo = (string) $request->input('matched_job_no', '');
+
+            if ($certain) {
+                $card = [
+                    'certain'        => JobMatchApplier::forCard($certain),
+                    'review'         => JobMatchApplier::forCard($review),
+                    'new_link'       => (string) $request->input('apply_link', ''),
+                    'delete_in_days' => $deleteInDays,
+                    'return_to'      => 'manual',
+                ];
+
+                if (! $createAnyway) {
+                    return back()->withInput()->with('job_matches', $card);
+                }
+                if (mb_strlen($anywayReason) < 10) {
+                    return back()->withInput()
+                        ->withErrors(['duplicate_reason' => 'Say in a few words why this is a different job (at least 10 characters).'])
+                        ->with('job_matches', $card);
                 }
             }
-
-            $deleteInDays = max(1, (int) $request->input('delete_at', 60));
 
             $job = Job::create([
                 'job_no' => '',
@@ -212,7 +228,24 @@ class JobController extends Controller
             // Set job_no = id (string representation of auto-increment)
             $job->update(['job_no' => (string) $job->id]);
 
-            return redirect('/admin/jobs')->with('success', 'Job has been successfully created.');
+            if ($certain && $createAnyway && $anywayReason !== '') {
+                JobMatchApplier::logCreatedDespite(
+                    (string) $job->job_no,
+                    $matchedJobNo !== '' ? $matchedJobNo : (string) $certain[0]['job']->job_no,
+                    $anywayReason,
+                    Job::STATUS_PENDING,
+                    'admin-create',
+                    $user->email ?? ('user:' . $user->id)
+                );
+            }
+
+            $created = 'Job has been successfully created.';
+            if ($review) {
+                $nos = implode(', #', array_map(fn ($m) => (string) $m['job']->job_no, $review));
+                $created .= ' Similar job(s) worth checking: #' . $nos . '.';
+            }
+
+            return redirect('/admin/jobs')->with('success', $created);
         }
 
         $dropdowns = $this->getFormDropdowns($user);
@@ -321,6 +354,13 @@ class JobController extends Controller
             // Update & Publish
             if ($request->input('update_and_publish')) {
                 $freshJob = Job::where('job_no', $jobNo)->first();
+
+                // Checked AFTER the update, so editing the prefix out of the
+                // title in the same submit publishes normally.
+                if ($blocked = $this->duplicateDraftBlock($freshJob)) {
+                    return redirect("/admin/jobs/{$jobNo}/edit")->with('error', $blocked);
+                }
+
                 $this->createFbPost($freshJob);
                 Job::where('job_no', $jobNo)->update(['job_status_id' => Job::STATUS_PUBLISHED]);
 
@@ -413,6 +453,29 @@ class JobController extends Controller
         return redirect('/admin/jobs')->with('success', 'Job has been cloned successfully.');
     }
 
+    /**
+     * A bulk XML import saves a job the matcher recognised as a Draft titled
+     * "[SAME AS N] ...". The prefix is the warning, so it must not reach the
+     * public site: publishing with it still attached would put our own
+     * duplicate marker in the page title, the <title> tag and the sitemap.
+     *
+     * Resolve it instead -- relink job N and delete the draft, or edit the
+     * title if it really is a different job.
+     */
+    private const SAME_AS_PREFIX = '[SAME AS ';
+
+    private function duplicateDraftBlock($job): ?string
+    {
+        if (! str_starts_with((string) $job->title, self::SAME_AS_PREFIX)) {
+            return null;
+        }
+
+        return 'This job is marked as a duplicate of an existing one, so it cannot be published '
+            . 'while its title still starts with "' . self::SAME_AS_PREFIX . '". Either update that '
+            . "job with this one's apply link and delete this draft, or edit the title if it really "
+            . 'is a different job.';
+    }
+
     public function publish(string $jobNo)
     {
         $user = session('user');
@@ -426,6 +489,9 @@ class JobController extends Controller
         }
         if (! $job->area_id || $job->area_id == 0) {
             return redirect('/admin/jobs')->with('error', 'Please set the area before publishing.');
+        }
+        if ($blocked = $this->duplicateDraftBlock($job)) {
+            return redirect('/admin/jobs')->with('error', $blocked);
         }
 
         $this->createFbPost($job);
