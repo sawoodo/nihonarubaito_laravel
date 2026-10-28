@@ -45,11 +45,23 @@
                   character, then escape. Whitespace is left exactly as stored.
                 --}}
                 @php
+                    // The v2 format opens every description with the same three
+                    // headings, so on a card they are 17+ characters of identical
+                    // boilerplate and the teaser never starts on the actual job.
+                    // Dropped here, display only -- the stored description keeps
+                    // them, and the detail page still shows them as headings.
                     $cardText = strip_tags(str_replace(
                         ['<br>', '<br/>', '<br />', '</li>', '</p>', '</ul>'],
                         ' ',
                         (string) $job->description
                     ));
+                    $cardText = preg_replace(
+                        '/\b(?:What you will do|Good to know|Key Japanese words)\b\s*/u',
+                        '',
+                        $cardText
+                    );
+                    // the first task starts "- "; so can what follows a heading
+                    $cardText = ltrim($cardText, " \t-");
                 @endphp
                 {{ mb_strlen($cardText) > 210 ? mb_substr($cardText, 0, 210) . '...' : $cardText }}
             </div>
