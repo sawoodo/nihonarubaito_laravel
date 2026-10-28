@@ -4,6 +4,97 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-28 — the XML import was silently dropping formatting, and a CDATA script could reach a raw-rendered page
+
+**Three deploys:** `d14dd3f` listing-card truncation, `28aea03` import rewrite
++ allow-list + four title fixes, `e174160` the job page's line breaks. No
+migration in any of them. Spec: `docs/specs/retirement-date.md` is a different
+build; this one has no spec file — it grew out of a read-only check.
+
+### What was wrong
+
+`createJobArray()` built the description with `(string) $xml->description`.
+**Casting a SimpleXML element to a string returns its TEXT only**, so every
+`<br/>` written as real markup was discarded, and the newline-plus-indent
+around it collapsed into a run of spaces. Separately, the `<responsibilities>`
+lookup tested `$xml->description->responsibilities` while the format puts that
+element NEXT TO `<description>` — so the task list was never appended at all.
+**4,825 jobs imported in 60 days hold one run-on paragraph with no list and no
+line breaks**, and 4,824 of them contain no HTML tag of any kind.
+
+### The hole that mattered more
+
+The new translation format, live from **2026-10-27**, wraps the description in
+CDATA. A CDATA section is handed over verbatim by the parser, so its contents
+are stored as-is — which is why jobs from the 27th onward do have `<b>` and
+`<br/>`. The same is true of `requirement` and `benefits` items, and all three
+columns are printed **raw** on the job detail page (`detail.blade.php:103`,
+`:202`, `:210`). Proved against the deployed controller:
+
+```
+OLD requirement: Bring your card<script>alert('stolen')</script><br />
+                 <a href="//evil.example" onclick="x()">Apply here instead</a>
+OLD benefits   : <img src=x onerror="alert(2)">Daily pay
+```
+
+A live `<script>`, an off-site anchor and an `<img onerror>`, stored and
+rendered unescaped on a public page, reachable by whoever writes the XML.
+
+**Audited before deploying: 0 of 123,015 jobs** carry a script, iframe, object,
+embed, img, svg, inline handler or anchor. Nothing was exploited; the surface
+opened when the format moved to CDATA. Only `<br>` (83,709) and `<b>` (56,008)
+are in use, so the allow-list — `br, b, strong, em, ul, li`, attributes removed,
+`script/style/iframe/object/embed` deleted **with their contents** — is wider
+than reality by design.
+
+### Four lessons
+
+- **`(string) $element` on SimpleXML drops child elements.** It returns text
+  nodes only. To keep markup, walk `dom_import_simplexml($el)->childNodes` and
+  take a CDATA node's `nodeValue` (its text IS the markup) while serialising
+  element children.
+- **`cleanXmlInput` must never reach inside a CDATA section.** Its
+  `html_entity_decode` turned `&amp;` into `&`, its bare-`&` rule turned it
+  back, and the parser then handed that over verbatim — so **either** spelling
+  of `&` inside a CDATA title reached the database as the five characters
+  `&amp;`, rendering to a visitor as "Hall &amp;". A plain (non-CDATA) title
+  was always fine, which is why it was 4 jobs and not 644. CDATA exists so its
+  contents are not interpreted; transforms must split on it and skip it.
+- **Any column printed raw needs an allow-list at the point of write**, not a
+  promise about the feed. `strip_tags` alone is not enough: it keeps the TEXT
+  inside a tag it removes, so `<script>alert(1)</script>` leaves `alert(1)`
+  sitting in the description as prose. Remove those elements whole first.
+- **A byte-based `substr` on text that may contain markup or kanji is a bug
+  waiting for the data to change.** The listing card cut at 210 BYTES and
+  printed the result raw. With the cut placed deliberately: inside a tag it
+  ends `...aaa<b`, inside 駅 it ends mid-codepoint (invalid UTF-8), inside an
+  attribute it ends `...<b class="`. Each corrupts every card after it.
+  `strip_tags` → `mb_substr` → escape.
+
+### Also
+
+The old descriptions' lost breaks are recoverable: 4,834 of 4,852 tagless
+descriptions carry a run of 3+ spaces, 25,500 runs, all but one exactly four
+spaces, and **109 of 109 runs in a 20-job sample fall straight after a . ! or
+?**. The job page now renders those runs as `<br/>` for tagless descriptions
+only, escaping first so the only markup in the output is the `<br/>` it inserts
+— strictly safer than the raw print it replaced, and self-disabling as the old
+descriptions age out. Stored data, the card, the JobPosting schema and
+`og:description` are untouched.
+
+Four published titles holding `&amp;` were corrected (163765, 163474, 159878,
+143582), title column only, slugs deliberately left alone. `updated_at` was not
+bumped: a data correction is not a human edit, and that column is the only
+"last edited by a person" signal this schema has.
+
+**Testing lesson from this session:** a bootstrapped script run on production
+writes to the production `laravel.log`. One of my own test runs put a
+`ParseError` there at 10:15:00 — my Blade-block extraction had grabbed the
+wrong `</small>` and produced an unbalanced `@if`. It looked exactly like a
+deploy error in the log. Name test scripts so they are obvious in a stack
+trace, and check the trace before reading an entry as production breakage.
+---
+
 ## 2026-10-27 — every retirement records its date; 2,947 pages stop redirecting early
 
 **What:** `App\Support\JobRetirement` is now the one way a job reaches status 4
