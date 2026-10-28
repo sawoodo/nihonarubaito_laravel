@@ -29,7 +29,29 @@
 
         <div class="col-md-6 col-sm-6 col-xs-12">
             <div>
-                {!! strlen($job->description) > 210 ? substr($job->description, 0, 210) . '...' : $job->description !!}
+                {{--
+                  A teaser, so tags are stripped and the text is escaped.
+
+                  It used to be `substr($job->description, 0, 210)` printed RAW.
+                  That was survivable only while every imported description was
+                  plain text: the new translation format puts <b> and <br/>
+                  inside a CDATA description, which the import already stores,
+                  and a 210-BYTE cut lands mid-tag ("...<b") or mid-character —
+                  a kanji is 3 bytes in UTF-8 — breaking the markup of every
+                  card on the page.
+
+                  strip_tags first (br and </li> become a space, or sentences
+                  would be glued together), then mb_substr so the cut is on a
+                  character, then escape. Whitespace is left exactly as stored.
+                --}}
+                @php
+                    $cardText = strip_tags(str_replace(
+                        ['<br>', '<br/>', '<br />', '</li>', '</p>', '</ul>'],
+                        ' ',
+                        (string) $job->description
+                    ));
+                @endphp
+                {{ mb_strlen($cardText) > 210 ? mb_substr($cardText, 0, 210) . '...' : $cardText }}
             </div>
 
             <span>
