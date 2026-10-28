@@ -344,17 +344,11 @@ class CreateJobFromXmlController extends Controller
         int $userId,
         int $imgId
     ): array {
-        // Description + responsibilities
-        $description = (string) ($xml->description ?? '');
-        if (isset($xml->description->responsibilities)) {
-            $items = [];
-            foreach ($xml->description->responsibilities->item as $item) {
-                $items[] = (string) $item;
-            }
-            if ($items) {
-                $description .= '<br /><br />' . implode('<br />', $items);
-            }
-        }
+        // Description + responsibilities. See descriptionFromXml(): casting
+        // the element to a string threw away every <br/> and the lookup for
+        // <responsibilities> pointed at the wrong level, so 4,825 jobs in 60
+        // days stored one run-on paragraph and no task list at all.
+        $description = $this->descriptionFromXml($xml);
 
         // Station lines
         $station = '';
@@ -443,7 +437,13 @@ class CreateJobFromXmlController extends Controller
         }
         $payload = [
             'job_no'               => '',
-            'title'                => (string) ($xml->title ?? ''),
+            // Decoded ONCE: a title inside CDATA is handed over verbatim by
+            // the parser, so "Hall &amp; Kitchen" would be stored as those
+            // five characters and rendered to a visitor as "Hall &amp;".
+            // Four published jobs carry that today. Decoding here is safe for
+            // the non-CDATA form too, where the parser has already decoded it
+            // and there is nothing left to decode.
+            'title'                => $this->decodeEntitiesOnce((string) ($xml->title ?? '')),
             'company_name'         => (string) ($xml->company ?? ''),
             'description'          => $description,
             'job_category_id'      => (int) ($xml->job_category_id ?? 0),
@@ -545,17 +545,160 @@ class CreateJobFromXmlController extends Controller
         }
     }
 
+    /**
+     * Tidy the pasted XML enough for simplexml, WITHOUT reaching inside a
+     * CDATA section.
+     *
+     * The two transforms below used to run over the whole string, and they
+     * disagree with the parser about CDATA. html_entity_decode turned an
+     * "&amp;" inside CDATA into "&", the bare-& rule turned it back into
+     * "&amp;", and simplexml then handed that over verbatim because it does
+     * not decode entities inside CDATA. Either spelling of "&" inside a CDATA
+     * title therefore reached the database as the five characters "&amp;".
+     *
+     * CDATA exists precisely so its contents are not interpreted, so the
+     * contents are now left exactly as the translator wrote them.
+     */
     private function cleanXmlInput(string $raw): string
     {
         $xml = trim($raw);
         $xml = preg_replace('/^```xml\s*/', '', $xml);            // Remove markdown code fence start
         $xml = preg_replace('/```\s*$/', '', $xml);                // Remove markdown code fence end
-        $xml = html_entity_decode($xml);                           // Fix &lt; → <
         $xml = preg_replace('/^\x{FEFF}/u', '', $xml);            // Remove BOM
         $xml = preg_replace('/^[^<]*/', '', $xml, 1);             // Remove anything before first <
-        // Sanitize bare & characters that aren't already XML entities
-        $xml = preg_replace('/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/', '&amp;', $xml);
-        return $xml;
+
+        // Split so that every CDATA section is its own part, and fix up only
+        // the parts outside them.
+        $parts = preg_split('/(<!\[CDATA\[.*?\]\]>)/s', $xml, -1, PREG_SPLIT_DELIM_CAPTURE);
+        foreach ($parts as $i => $part) {
+            if (str_starts_with($part, '<![CDATA[')) {
+                continue;                                          // untouched, on purpose
+            }
+            $part = html_entity_decode($part);                     // Fix &lt; → <
+            // Sanitize bare & characters that aren't already XML entities
+            $parts[$i] = preg_replace('/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[\da-fA-F]+;)/', '&amp;', $part);
+        }
+
+        return implode('', $parts);
+    }
+
+    /** Tags a description may keep. Everything else is stripped on import. */
+    private const DESCRIPTION_TAGS = ['br', 'b', 'strong', 'em', 'ul', 'li'];
+
+    /**
+     * The description, with the translator's formatting intact.
+     *
+     * Two bugs lived here. `(string) $xml->description` returns an element's
+     * TEXT only, so every <br/> written as real markup was dropped; and the
+     * <responsibilities> lookup tested $xml->description->responsibilities
+     * while the old format puts that element NEXT TO <description>, so the
+     * task list was never appended. Between them, 4,825 jobs imported in 60
+     * days hold one run-on paragraph with no list and no line breaks.
+     *
+     * Both input shapes now work:
+     *   old format  <description>text<br/>text</description> plus a sibling
+     *               <responsibilities><item>…</item></responsibilities>
+     *   new format  <description><![CDATA[<b>…</b><br/>- …]]></description>
+     *
+     * The CDATA path is unchanged in effect — its contents were already being
+     * stored verbatim, which is why jobs from 2026-10-27 onward do have tags.
+     */
+    private function descriptionFromXml(\SimpleXMLElement $xml): string
+    {
+        // Skip a nested <responsibilities>: it is appended below, and
+        // reading it here as well put every item in twice, the first time with
+        // its tags stripped and its text glued to the sentence before it.
+        $description = $this->innerMarkup($xml->description ?? null, ['responsibilities']);
+
+        // Accept <responsibilities> in either place: inside <description>
+        // (what the code used to look for) or beside it (what the XML sends).
+        $lists = [];
+        if (isset($xml->description->responsibilities)) {
+            $lists[] = $xml->description->responsibilities;
+        }
+        if (isset($xml->responsibilities)) {
+            $lists[] = $xml->responsibilities;
+        }
+
+        $items = [];
+        foreach ($lists as $list) {
+            foreach ($list->item as $item) {
+                $text = trim($this->innerMarkup($item));
+                if ($text !== '') {
+                    $items[] = $text;
+                }
+            }
+        }
+        if ($items) {
+            $description .= '<br /><br />' . implode('<br />', array_unique($items));
+        }
+
+        return $this->allowOnlyDescriptionTags($description);
+    }
+
+    /**
+     * An element's inner markup: child elements kept as markup, and a CDATA
+     * section's contents taken literally (CDATA is how the new format carries
+     * its markup, so its text IS the markup).
+     */
+    private function innerMarkup(?\SimpleXMLElement $el, array $skip = []): string
+    {
+        if ($el === null) {
+            return '';
+        }
+
+        $node = dom_import_simplexml($el);
+        $out = '';
+        foreach ($node->childNodes as $child) {
+            if ($skip && $child->nodeType === XML_ELEMENT_NODE
+                && in_array(strtolower($child->nodeName), $skip, true)) {
+                continue;
+            }
+            $out .= $child->nodeType === XML_CDATA_SECTION_NODE
+                ? $child->nodeValue                                // literal contents
+                : $child->ownerDocument->saveXML($child);          // <br/>, text, …
+        }
+
+        return $out;
+    }
+
+    /**
+     * Keep only the formatting tags, and drop every attribute from them.
+     *
+     * The description is printed RAW on the job detail page
+     * (resources/views/jobs/detail.blade.php), so whatever is stored here
+     * reaches a browser unescaped. The feed is written by a model and pasted
+     * by a person: neither is a reason to trust a <script>, a style attribute
+     * or an onclick. An allow-list is the only safe shape for that sink.
+     */
+    private function allowOnlyDescriptionTags(string $html): string
+    {
+        // strip_tags keeps the TEXT inside a tag it removes, so a
+        // <script>alert(1)</script> would leave "alert(1)" sitting in the
+        // description as visible prose. Remove those elements whole first.
+        $html = preg_replace('#<(script|style|iframe|object|embed)\b[^>]*>.*?</\1\s*>#is', '', $html);
+        $html = preg_replace('#<(script|style|iframe|object|embed)\b[^>]*/?>#i', '', $html);
+
+        $allowed = '<' . implode('><', self::DESCRIPTION_TAGS) . '>';
+        $html = strip_tags($html, $allowed);
+
+        // strip_tags keeps attributes on the tags it allows; none are wanted.
+        $names = implode('|', self::DESCRIPTION_TAGS);
+        $html = preg_replace('/<(' . $names . ')\b[^>]*?(\/?)>/i', '<$1$2>', $html);
+
+        return trim($html);
+    }
+
+    /**
+     * Decode HTML entities exactly once.
+     *
+     * Only ever applied to a value the parser may have handed over verbatim
+     * (CDATA). Running it on already-decoded text is a no-op, which is what
+     * makes it safe to apply unconditionally.
+     */
+    private function decodeEntitiesOnce(string $value): string
+    {
+        return html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
     /**
      * Correct prefecture_id / area_id from the Japanese address.
