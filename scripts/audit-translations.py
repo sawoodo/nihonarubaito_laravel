@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 audit-translations.py -- do the jobs created in the last N days follow the
-translation rules (translation-instructions-v2)?
+translation rules (translation-instructions-v2.2, 2026-10-28 11:05 UTC)?
 
 READ-ONLY. Reads TSV exports (mysql --batch) and writes a report. Touches no
 database.
@@ -16,7 +16,8 @@ database.
 SEVERITY
   ERROR  a rule is clearly broken (wrong wage in the title, "&amp;" in the
          title, "no Japanese needed", an unconverted 25:00 time, a night-shift
-         tag on a day job, ...).
+         tag on a day job, a "minutes walk" line that is really a bicycle or
+         bus ride, ...).
   CHECK  a heuristic says "look at this by eye" (the title's role is not in
          the task list, the tasks name a second role the title leaves out,
          the old default working-days sentence, ...). Not every CHECK is a
@@ -141,14 +142,51 @@ def ranges(text):
     return out
 
 
+def bracket_spans(text):
+    spans, stack = [], []
+    for i, ch in enumerate(text):
+        if ch == '(':
+            stack.append(i)
+        elif ch == ')' and stack:
+            spans.append((stack.pop(), i))
+    return spans
+
+
+def shift_ranges(text):
+    """The time ranges that are SHIFTS.
+
+    A range inside brackets counts only when that bracket holds two or more of
+    them: "(front desk also: 08:30-16:30 / 16:30-00:30 / 00:30-08:30
+    overnight)" is a second shift list, while "(22:00-22:30 for staff aged 18
+    and over only)" is a note about an age limit or a premium window and must
+    not make an evening job look like a night shift."""
+    t = nfkc(text)
+    rs = ranges(t)
+    spans = bracket_spans(t)
+    out = []
+    for s, e, a, b in rs:
+        inner = [sp for sp in spans if sp[0] < a < sp[1]]
+        if not inner:
+            out.append((s, e, a, b))
+            continue
+        lo, hi = max(inner, key=lambda sp: sp[0])
+        if sum(1 for _, _, x, _ in rs if lo < x < hi) >= 2:
+            out.append((s, e, a, b))
+    return out
+
+
 def covers_night(start, end):
-    """True if the shift includes any minute between 00:00 and 05:00."""
-    if start == end:            # 00:00-00:00 = 24-hour operation
+    """v2.2: night = the shift STARTS at 22:00 or later, or it includes any
+    minute between 00:00 and 05:00. A shift that ENDS at 22:00, 23:00 or
+    24:00 is evening, not night -- even when a 深夜手当 is paid."""
+    if start == end:            # 00:00-00:00 = round the clock
         return True
     if end > 24 * 60 or start >= 24 * 60:   # unconverted 25:00 style
         return True
-    if end < start:             # crosses midnight
-        return end > 0
+    if start >= 22 * 60:        # v2.2: 22:00-23:30 is a night shift
+        return True
+    if end < start and end != 0:            # crosses midnight (24:00 does not)
+        return True
     return start < 5 * 60       # starts after midnight, e.g. 01:00-05:00
 
 
@@ -160,14 +198,50 @@ def walk_minutes(station):
 
 
 def norm_link(link):
+    """One key per SOURCE OFFER.
+
+    shigotoin and baitoru carry the offer id in the path and tracking junk in
+    the query, so those two are keyed on the id alone. Every other host keeps
+    its query string: sftworks.jp identifies the offer ONLY in ?work_id=, and
+    dropping it collapsed 17 different offers into one (2026-10-28)."""
     link = (link or '').strip()
     if not link:
         return ''
     p = urlsplit(link)
+    host = p.netloc.lower().removeprefix('www.')
     m = re.search(r'/offer/(\d+)', p.path)
-    if m and 'shigotoin' in p.netloc:
+    if m and 'shigotoin' in host:
         return f'shigotoin:{m.group(1)}'
-    return (p.netloc.lower().removeprefix('www.') + p.path.rstrip('/')).lower()
+    if 'baitoru' in host:
+        m = re.search(r'/entry/(?:form/)?(?:job)?(\d+)', p.path)
+        if m:
+            return f'baitoru:{m.group(1)}'
+    base = host + p.path.rstrip('/')
+    return (base + ('?' + p.query if p.query else '')).lower()
+
+
+CUTOFF_DEFAULT = '2026-10-28 11:05:00'   # v2.2 instructions, UTC
+
+
+def parse_dt(value):
+    """jobs.date as stored by MySQL (server and MySQL both run UTC)."""
+    try:
+        return dt.datetime.strptime((value or '')[:19], '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return None
+
+
+def in_brackets(text, pos):
+    """True if text[pos] sits inside ( ... ). A time range inside a note --
+    "(overnight, 22:00-05:00 for staff aged 18 and over only)" -- is an
+    explanation of a premium window, not a shift."""
+    depth = 0
+    for ch in text[:pos]:
+        if ch == '(':
+            depth += 1
+        elif ch == ')' and depth:
+            depth -= 1
+    return depth > 0
 
 
 def section(desc_html, heading):
@@ -195,7 +269,9 @@ def list_lines(sec):
 # Role families: title words -> family, and task keywords per family.
 TITLE_WORDS = [
     ('kitchen', r'\b(kitchen|cook|cooking|prep)\b'),
-    ('hall', r'\b(hall|service|server|serving|waiter|waitress|floor)\b'),
+    # "service" alone is counter/customer service (Deli Service Staff), not
+    # restaurant hall work -- it flagged correct titles (2026-10-28).
+    ('hall', r'\b(hall|server|serving|waiter|waitress|floor)\b'),
     ('dish', r'\b(dishwasher|dishwashing|dish)\b'),
     ('cashier', r'\bcashier\b'),
     ('stocking', r'\b(shelf|stocking)\b'),
@@ -261,14 +337,21 @@ BANNED_CHARS = re.compile(
     '[‘’“”•★☆♥❤→←➡'
     '\U0001F300-\U0001FAFF☀-⛿✀-➿]')
 OLD_DEFAULT_DAYS = re.compile(r'^\s*minimum 4 hours a day and 2 days a week\s*$', re.I)
+WALK_EN = re.compile(r'\d+\s*minutes?\s*walk', re.I)
+# A bus RIDE (バスで / バス15分), never バス停 or a bus company in a stop name:
+# "...バス停から徒歩4分" is a walk FROM a bus stop and must not be flagged.
+VEHICLE_JA = re.compile(r'自転車|バイク|車で|バスで|バス\s*\d+\s*分')
 
 
 # --------------------------------------------------------------------------
 # the audit
 # --------------------------------------------------------------------------
 
-def audit_job(j):
-    """Return (format, [(severity, rule, detail), ...]) for one job."""
+def audit_job(j, cutoff=None):
+    """Return (format, [(severity, rule, detail), ...]) for one job.
+
+    `cutoff` is when the v2.2 instructions took effect; rules that v2.2
+    introduced are ERROR after it and CHECK before it."""
     flags = []
 
     def add(sev, rule, detail=''):
@@ -280,6 +363,8 @@ def audit_job(j):
     hook = title_hook(title)
     role_wo_hook = role[len(hook):].strip() if hook else role
     tags = {t.strip() for t in (j.get('tags') or '').split(',') if t.strip()}
+    created = parse_dt(j.get('date'))
+    post_v22 = bool(cutoff and created and created >= cutoff)
 
     present = [h for h in HEADINGS if h in desc]
     fmt = 'v2' if len(present) == 3 else ('partial' if present else 'old')
@@ -374,30 +459,38 @@ def audit_job(j):
     wh = j.get('working_hours', '')
     if not wh.strip():
         add('CHECK', 'hours_empty', 'working_hours is empty')
-    if re.search(r'\b(2[4-9]|3\d):\d\d', nfkc(wh)):
-        add('ERROR', 'hours_24h_notation', 'a 25:00-style time was not converted')
-    for s, e, a, b in ranges(wh):
-        if e < s and e != 0 and s < 24 * 60:
-            seg = nfkc(wh)[a:b + 40].lower()
-            if 'overnight' not in seg:
+    if re.search(r'\b(2[5-9]|3[0-5]):\d\d', nfkc(wh)):
+        add('ERROR', 'hours_24h_notation',
+            'a 25:00-35:59 time was not converted (24:00 is allowed)')
+    whn = nfkc(wh)
+    if 'overnight' not in whn.lower():
+        for s, e, a, b in ranges(wh):
+            if e < s and e != 0 and s < 24 * 60 and not in_brackets(whn, a):
                 add('ERROR', 'hours_overnight_missing',
-                    f'{nfkc(wh)[a:b]} crosses midnight without "(overnight)"')
+                    f'{whn[a:b]} crosses midnight without "(overnight)"')
                 break
     if OLD_DEFAULT_DAYS.match(j.get('working_days', '')):
         add('CHECK', 'days_old_default',
             'exactly "Minimum 4 hours a day and 2 days a week" -- the old invented default?')
 
     # ---- tags ----
-    rs = ranges(wh)
+    rs = shift_ranges(wh)
     night = any(covers_night(s, e) for s, e, _, _ in rs)
     if 'night-shift-jobs' in tags and rs and not night:
         add('ERROR', 'tag_night_shift_wrong', f'tagged night-shift; hours "{wh}"')
     if 'night-shift-jobs' not in tags and night:
-        add('CHECK', 'tag_night_shift_missing', f'hours "{wh}" include 00:00-05:00')
+        add('CHECK', 'tag_night_shift_missing',
+            f'hours "{wh}" start at 22:00 or later, or cover 00:00-05:00')
     if 'near-station-jobs' in tags:
         mins = walk_minutes(j.get('station', ''))
-        if mins and min(mins) > 5:
-            add('ERROR', 'tag_near_station_wrong', f'tagged near-station; nearest walk {min(mins)} min')
+        near = f'; nearest walk {min(mins)} min' if mins else ''
+        add('ERROR' if post_v22 else 'CHECK', 'tag_near_station_used',
+            f'near-station is not a tag in v2.2{near}')
+    for line in BR_RE.split(j.get('station', '')):
+        if WALK_EN.search(line) and VEHICLE_JA.search(line):
+            add('ERROR', 'station_walk_by_vehicle',
+                f'"{" ".join(TAG_RE.sub(" ", line).split())[:90]}"')
+            break
     if 'hand-cash-jobs' in tags and 'Hand Cash' not in found:
         add('CHECK', 'tag_hand_cash_unsupported', 'tagged hand-cash; text never mentions it')
 
@@ -408,13 +501,24 @@ def audit_job(j):
 # report
 # --------------------------------------------------------------------------
 
-def run(jobs, users, days, out_dir):
+GROUPS = ('v2.2', 'v2', 'partial', 'old')
+
+
+def group_of(fmt, j, cutoff):
+    """old / partial stay as they are; a v2 job splits on the cutoff."""
+    if fmt != 'v2':
+        return fmt
+    created = parse_dt(j.get('date'))
+    return 'v2.2' if (cutoff and created and created >= cutoff) else 'v2'
+
+
+def run(jobs, users, days, out_dir, cutoff=None):
     names = {u['id']: f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
              for u in users}
     results = []
     for j in jobs:
-        fmt, flags = audit_job(j)
-        results.append((j, fmt, flags))
+        fmt, flags = audit_job(j, cutoff)
+        results.append((j, group_of(fmt, j, cutoff), flags))
 
     # split offers: one source offer -> several jobs inside the window
     by_link = defaultdict(list)
@@ -454,7 +558,7 @@ def run(jobs, users, days, out_dir):
         for sev, rule, detail in fl:
             if len(rule_ex[rule]) < 3:
                 rule_ex[rule].append(f"{j.get('job_no')} ({detail})")
-    v2 = [(j, fl) for j, fmt, fl in results if fmt == 'v2']
+    v2 = [(j, fl) for j, fmt, fl in results if fmt in ('v2', 'v2.2')]
     v2_clean = sum(1 for _, fl in v2 if not fl)
     v2_err = sum(1 for _, fl in v2 if any(s == 'ERROR' for s, _, _ in fl))
 
@@ -475,21 +579,25 @@ def run(jobs, users, days, out_dir):
     L = []
     L.append(f'# Translation audit -- last {days} days ({n} jobs)\n')
     L.append(f'Generated {dt.datetime.now():%Y-%m-%d %H:%M}. Read-only. '
-             'ERROR = rule clearly broken; CHECK = look by eye.\n')
+             'ERROR = rule clearly broken; CHECK = look by eye.')
+    L.append(f'v2.2 instructions took effect {cutoff:%Y-%m-%d %H:%M} UTC.\n'
+             if cutoff else '')
     L.append('## Format\n\n| format | jobs |\n|---|---|')
-    for f in ('v2', 'partial', 'old'):
+    for f in GROUPS:
         L.append(f'| {f} | {fmt_c.get(f, 0)} |')
-    L.append(f'\nv2 jobs with no flag at all: **{v2_clean} of {len(v2)}**; '
-             f'v2 jobs with at least one ERROR: **{v2_err}**.\n')
-    L.append('## By day\n\n| day | v2 | partial | old |\n|---|---|---|---|')
+    L.append(f'\nv2-format jobs (v2 + v2.2) with no flag at all: **{v2_clean} of '
+             f'{len(v2)}**; with at least one ERROR: **{v2_err}**.\n')
+    L.append('## By day\n\n| day | v2.2 | v2 | partial | old |\n|---|---|---|---|---|')
     for d in sorted(by_day, reverse=True):
         c = by_day[d]
-        L.append(f'| {d} | {c.get("v2", 0)} | {c.get("partial", 0)} | {c.get("old", 0)} |')
-    L.append('\n## By translator\n\n| user | name | jobs | v2 | old | clean | with ERROR |\n'
-             '|---|---|---|---|---|---|---|')
+        L.append(f'| {d} | {c.get("v2.2", 0)} | {c.get("v2", 0)} | '
+                 f'{c.get("partial", 0)} | {c.get("old", 0)} |')
+    L.append('\n## By translator\n\n| user | name | jobs | v2.2 | v2 | old | clean | with ERROR |\n'
+             '|---|---|---|---|---|---|---|---|')
     for u, c in sorted(per.items(), key=lambda kv: -kv[1]['jobs']):
-        L.append(f"| {u} | {names.get(u, '')} | {c['jobs']} | {c.get('v2', 0)} | "
-                 f"{c.get('old', 0)} | {c.get('clean', 0)} | {c.get('with_error', 0)} |")
+        L.append(f"| {u} | {names.get(u, '')} | {c['jobs']} | {c.get('v2.2', 0)} | "
+                 f"{c.get('v2', 0)} | {c.get('old', 0)} | {c.get('clean', 0)} | "
+                 f"{c.get('with_error', 0)} |")
     L.append('\n## Rules\n\n| severity | rule | jobs | examples |\n|---|---|---|---|')
     for (sev, rule), cnt in sorted(rule_c.items(), key=lambda kv: (kv[0][0] != 'ERROR', -kv[1])):
         L.append(f'| {sev} | {rule} | {cnt} | {"; ".join(rule_ex[rule])} |')
@@ -562,8 +670,9 @@ BAD_CASES = {
     'tag_night_shift_wrong': {'working_hours': '09:00-15:00 / 17:00-22:00',
                               'wage_detail': 'Paid in cash by hand (手渡し tewatashi)'},
     'tag_night_shift_missing': {'tags': 'hand-cash-jobs'},
-    'tag_near_station_wrong': {'tags': CLEAN_V2['tags'] + ',near-station-jobs',
-                               'station': '9 minutes walk from Shinjuku Station 新宿駅から徒歩9分'},
+    'tag_near_station_used': {'tags': CLEAN_V2['tags'] + ',near-station-jobs'},
+    'station_walk_by_vehicle': {
+        'station': '5 minutes walk from Shinjuku Station 新宿駅から徒歩5分 自転車5分'},
     'tag_hand_cash_unsupported': {'title': CLEAN_V2['title'].replace('Hand Cash ', ''),
                                   'wage_detail': '22:00-05:00 1,625円',
                                   'description': CLEAN_V2['description'].replace(
@@ -571,9 +680,64 @@ BAD_CASES = {
 }
 
 
+# v2.2 cases that need their own job, and cases that must fire NOTHING.
+SELFTEST_CUTOFF = parse_dt(CUTOFF_DEFAULT)
+
+EXTRA_CASES = [
+    # (name, patch, rule that must fire)
+    ('tag_night_shift_missing 22:00-23:30',
+     {'working_hours': '22:00-23:30', 'tags': 'hand-cash-jobs'},
+     'tag_night_shift_missing'),
+    ('tag_night_shift_wrong 17:00-23:00',
+     {'working_hours': '17:00-23:00'},
+     'tag_night_shift_wrong'),
+    ('station_walk_by_vehicle on a real bus ride',
+     {'station': '15 minutes walk from Chofu Station 調布駅からバス15分'},
+     'station_walk_by_vehicle'),
+    ('tag_near_station_used is ERROR after the cutoff',
+     {'tags': CLEAN_V2['tags'] + ',near-station-jobs',
+      'date': '2026-10-28 12:00:00'},
+     'tag_near_station_used'),
+]
+
+MUST_NOT_FIRE = [
+    ('a walk from a bus stop',
+     {'station': '4 minutes walk from Dotonbori Bus Stop 道頓堀バス停から徒歩4分'},
+     ['station_walk_by_vehicle']),
+    ('a bracketed shift list is still a shift list',
+     {'working_hours': '10:00-22:00 (shift system - 4 to 8 hour blocks; front desk '
+                       'also: 08:30-16:30 / 16:30-00:30 / 00:30-08:30 overnight)'},
+     ['tag_night_shift_wrong']),
+    ('a night window quoted inside a note',
+     {'working_hours': '11:30-20:30 (early shift) / 13:30-22:30 (late shift, '
+                       '22:00-22:30 for staff aged 18 and over only)',
+      'tags': 'hand-cash-jobs'},
+     ['tag_night_shift_missing']),
+    # (name, patch, rules that must NOT fire)
+    ("164270's real working_hours",
+     {'working_hours': '07:00-11:00 / 14:00-18:00 / 17:00-22:00 / 22:00-07:00 '
+                       '(overnight, 22:00-05:00 for staff aged 18 and over only) '
+                       '(shift system)'},
+     ['hours_overnight_missing']),
+    ('Supermarket Deli Service Staff',
+     {'title': 'Supermarket Deli Service Staff Part Time Job at Himeji Station '
+               '姫路駅 in Hyogo 1,300円',
+      'description': '<b>What you will do</b><br/>- Measure and weigh portions of '
+                     'prepared foods<br/>- Wrap and package the items<br/>'
+                     '- Process payment at the cashier<br/><br/>'
+                     '<b>Good to know</b><br/>A deli counter.<br/><br/>'
+                     '<b>Key Japanese words</b><br/>- prepared foods (お惣菜 o-souzai)'},
+     ['title_role_not_in_tasks', 'title_missing_role']),
+    ('17:00-24:00 ends at midnight',
+     {'working_hours': '17:00-24:00', 'tags': 'hand-cash-jobs'},
+     ['hours_24h_notation', 'hours_overnight_missing',
+      'tag_night_shift_missing', 'tag_night_shift_wrong']),
+]
+
+
 def selftest():
     ok = True
-    fmt, flags = audit_job(dict(CLEAN_V2))
+    fmt, flags = audit_job(dict(CLEAN_V2), SELFTEST_CUTOFF)
     if fmt != 'v2' or flags:
         print(f'FAIL clean v2 job: format={fmt} flags={flags}')
         ok = False
@@ -582,28 +746,66 @@ def selftest():
     for rule, patch in BAD_CASES.items():
         j = dict(CLEAN_V2)
         j.update(patch)
-        _, flags = audit_job(j)
+        _, flags = audit_job(j, SELFTEST_CUTOFF)
         fired = {r for _, r, _ in flags}
         if rule in fired:
             print(f'ok   {rule}')
         else:
             print(f'FAIL {rule}: fired {sorted(fired)}')
             ok = False
-    # split offer is a window-level rule
+    for name, patch, rule in EXTRA_CASES:
+        j = dict(CLEAN_V2)
+        j.update(patch)
+        _, flags = audit_job(j, SELFTEST_CUTOFF)
+        fired = {r for _, r, _ in flags}
+        sev = {r: sv for sv, r, _ in flags}
+        bad = rule not in fired
+        if 'ERROR after the cutoff' in name and not bad:
+            bad = sev.get(rule) != 'ERROR'
+        if bad:
+            print(f'FAIL {name}: fired {sorted(fired)}')
+            ok = False
+        else:
+            print(f'ok   {name}')
+    for name, patch, must_not in MUST_NOT_FIRE:
+        j = dict(CLEAN_V2)
+        j.update(patch)
+        _, flags = audit_job(j, SELFTEST_CUTOFF)
+        fired = {r for _, r, _ in flags}
+        hit = sorted(set(must_not) & fired)
+        if hit:
+            print(f'FAIL {name}: should fire none of {must_not}, fired {hit}')
+            ok = False
+        else:
+            print(f'ok   {name}: no {"/".join(must_not)}')
+    # window-level rules
     import tempfile
+    import io
+    import contextlib
     with tempfile.TemporaryDirectory() as d:
         a, b = dict(CLEAN_V2), dict(CLEAN_V2)
         b['job_no'], b['id'] = '2', '2'
-        import io
-        import contextlib
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            run([a, b], [], 1, d)
+            run([a, b], [], 1, d, SELFTEST_CUTOFF)
         if 'same_offer_several_jobs' in buf.getvalue():
             print('ok   same_offer_several_jobs')
         else:
             print('FAIL same_offer_several_jobs')
             ok = False
+    with tempfile.TemporaryDirectory() as d:
+        a, b = dict(CLEAN_V2), dict(CLEAN_V2)
+        b['job_no'], b['id'] = '2', '2'
+        a['apply_link'] = 'https://sftworks.jp/entry/input?work_id=W015869648'
+        b['apply_link'] = 'https://sftworks.jp/entry/input?work_id=W015882334'
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run([a, b], [], 1, d, SELFTEST_CUTOFF)
+        if 'same_offer_several_jobs' in buf.getvalue():
+            print('FAIL two sftworks work_ids grouped as one offer')
+            ok = False
+        else:
+            print('ok   two sftworks work_ids are two offers')
     # mysql --batch escapes and CR
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, 't.tsv')
@@ -625,6 +827,9 @@ def main():
     ap.add_argument('--users')
     ap.add_argument('--out-dir', default=os.path.expanduser('~/nihon-reports'))
     ap.add_argument('--days', type=int, default=7)
+    ap.add_argument('--cutoff', default=CUTOFF_DEFAULT,
+                    help='when the v2.2 instructions took effect, UTC '
+                         f'(default {CUTOFF_DEFAULT})')
     ap.add_argument('--selftest', action='store_true')
     a = ap.parse_args()
     if a.selftest:
@@ -636,7 +841,10 @@ def main():
         sys.exit('jobs.tsv has no rows -- the window or the date column is wrong; '
                  'that is not a clean result')
     users = read_tsv(a.users) if a.users else []
-    run(jobs, users, a.days, os.path.expanduser(a.out_dir))
+    cutoff = parse_dt(a.cutoff)
+    if cutoff is None:
+        sys.exit(f'--cutoff {a.cutoff!r} is not "YYYY-MM-DD HH:MM:SS"')
+    run(jobs, users, a.days, os.path.expanduser(a.out_dir), cutoff)
 
 
 if __name__ == '__main__':
