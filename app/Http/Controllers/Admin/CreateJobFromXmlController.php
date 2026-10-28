@@ -382,26 +382,28 @@ class CreateJobFromXmlController extends Controller
             $wage = (string) ($xml->wage ?? '');
         }
 
-        // Benefits
+        // Benefits and requirements are printed RAW too
+        // (resources/views/jobs/detail.blade.php:202 and :210), so they go
+        // through the same allow-list as the description. innerMarkup keeps a
+        // CDATA item's markup, which the plain string cast would have dropped.
         $benefits = '';
         if (isset($xml->benefits->item)) {
             $items = [];
             foreach ($xml->benefits->item as $item) {
-                $items[] = (string) $item;
+                $items[] = $this->innerMarkup($item);
             }
-            $benefits = implode('<br />', $items);
+            $benefits = $this->allowOnlyDescriptionTags(implode('<br />', $items));
         }
 
-        // Requirements
         $requirement = '';
         if (isset($xml->requirement->item)) {
             $items = [];
             foreach ($xml->requirement->item as $item) {
-                $items[] = (string) $item;
+                $items[] = $this->innerMarkup($item);
             }
-            $requirement = implode('<br />', $items);
+            $requirement = $this->allowOnlyDescriptionTags(implode('<br />', $items));
         } else {
-            $requirement = (string) ($xml->requirement ?? '');
+            $requirement = $this->allowOnlyDescriptionTags($this->innerMarkup($xml->requirement ?? null));
         }
 
 
