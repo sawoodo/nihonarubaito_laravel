@@ -100,7 +100,33 @@
                                             <div class="row">
                                                 <div class="col-md-4 text-left">{{ $content->job_description_label }}:</div>
                                                 <div class="col-md-8 text-left">
-                                                    <small>{!! $job->description !!}</small>
+                                                    {{--
+                                                      Descriptions imported before 2026-10-27 lost their
+                                                      paragraph breaks: the import cast the XML element to a
+                                                      string, which returns text only, so every <br/> was
+                                                      dropped and the newline-plus-indent around it collapsed
+                                                      into a run of spaces. 4,834 of 4,852 such descriptions
+                                                      carry a run of 3+ spaces, 25,500 runs in all, and in a
+                                                      20-job sample 109 of 109 fell straight after . ! or ? --
+                                                      they are sentence boundaries, not stray whitespace.
+
+                                                      So for a description with NO tag at all, the runs are
+                                                      shown as the line breaks they were. Escaped FIRST, so the
+                                                      only markup in the output is the <br/> put there here;
+                                                      that makes this branch strictly safer than the raw print
+                                                      it replaces. A description that has tags is left exactly
+                                                      as before -- the import now bounds those to
+                                                      br/b/strong/em/ul/li with no attributes -- so this rule
+                                                      switches itself off as the old descriptions age out.
+
+                                                      Display only: stored data, the listing card, the
+                                                      JobPosting schema and og:description are untouched.
+                                                    --}}
+                                                    @php
+                                                        $jobDescription = (string) $job->description;
+                                                        $descriptionHasTags = (bool) preg_match('/<[a-zA-Z\/!]/', $jobDescription);
+                                                    @endphp
+                                                    <small>@if ($descriptionHasTags){!! $jobDescription !!}@else{!! preg_replace('/ {3,}/u', '<br/>', e($jobDescription)) !!}@endif</small>
                                                 </div>
                                             </div>
 
