@@ -1,24 +1,27 @@
 # Nihon Arubaito — Project Status (living document)
 
-**Last updated:** 2026-10-27 (Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
+**Last updated:** 2026-10-28 (Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
 **Read this first in every new chat.** Update it at the end of any session that resolves, finds or decides something: edit lines in place, move finished items from *Pending* to *Resolved* with date + commit.
 Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `SETUP.md`. This file is the cross-chat summary.
 
 ---
 
-## 0. Now (from 2026-10-27)
+## 0. Now (from 2026-10-28)
 
 **Next tasks, in order:**
 1. **Thu 29 Oct, morning PKT, Japan VPN on: first `/daily-link-check`** (covers Oct 30: 175 + Oct 31: 222 due jobs). Then every morning. Upload the extend CSV on the Link Check page, then `expire <folder>`.
 2. **Team:** work the held-for-review sheet (`~/nihon-reports/dedupe-20261027-0137/held-for-review-20261027.csv` on the Mac; 14 same-listing pairs with different roles). First 163725 (packing vs hospital cooking), 163838 (packing vs masking tape), 162930 (Tenjin vs Nakasu-Kawabata); also 141599 vs 156576 (same Kasukabe udon job — keep one).
-3. **Import-preview duplicate warning** (biggest lever: 26–54% of new jobs were repeats). Same rules as `scripts/dedupe-plan.py`; translators' Claude project should copy 会社名/勤務先/最寄駅/職種/給与/勤務時間 + offer number into the XML untouched. Needs the translation project's instructions from the owner.
-4. **Duplicates page:** "Keep older + take newer link" button; default to keeping the older job.
-5. **Expired-job policy decisions** (doc: https://claude.ai/artifact/K6SHrgpxzucMxFpDLqpwQW): keep expired pages indexed only while they earn clicks? daily small scans (now done via /daily-link-check). Then code changes 1–5 of the doc (Expire_Date trigger, better alternatives, empty-page guard, backlink redirect list, quota-full alternatives).
-6. **Admin redesign:** mockup https://claude.ai/artifact/QN9tMoh21Jzd66GDMtKptN (Find jobs + quick view). Search must read source facts from the pasted shigotoin text (server can't fetch shigotoin).
-7. FamilyMart profile for link-check.py (closed = 「ただいま、この店舗は募集を行っておりません。」).
-8. Monday 2 Nov: `/check-translator-duplicates 7` (target < 5%), `/dedupe-published plan`.
+3. ✅ **Import duplicate check deployed Oct 27** (`39af369` + Blade fix `51e1355`): `App\Services\JobMatcher` (PHP port of `dedupe-plan.py` rules, parity 0 differences on 1,719 pairs) runs on single XML import, bulk XML import and manual create. Certain match → card "This looks like job N" with **Update job N with this link** (relink; revives if retired ≤ 60 days; admin/manager only; guarded FOR UPDATE on status + link; never touches `date`) or **Create anyway** with a typed reason. Dedupe-trashed copies are swapped for their keeper; matches retired > 60 days are notices only; bulk saves matches as Draft `[SAME AS N]` and publishing refuses that prefix. Replay of 7 days: 69/553 blocked (12.5%), 145 notices. **Watch the first real imports.**
+   Broken live apply links to fix by hand: **163055** (truncated Claude chat URL) and **163135** (whole XML pasted into the field).
+4. ✅ **Translation quality (Oct 27–28).** Translation project instructions replaced with **v2** (`claude/translation-instructions-v2.md` in this project): one source offer = one job ("Kitchen and Hall Staff"), title role taken from 仕事内容 (role table), description in CDATA with three sections (What you will do / Good to know / Key Japanese words), every shift listed separately with its own conditions, no default working days, no invented walk times, Japanese level only as stated, never `&` `<` `>`. Translators switched on 27 Oct (77 of 81 jobs). Import fixed to keep the formatting (`d14dd3f`, `28aea03`, `e174160` — see Resolved). Ayesha told to use only the translation project (4 old-format jobs on 27 Oct). **Next:** `/audit-translations 7` command (title role vs tasks, merged/empty shifts, "no Japanese needed", `&amp;`, missing sections, title wage vs `<base>`, per translator); optional Sonnet vs Sonnet+thinking vs Opus test on 10 listings.
+5. **Duplicates page:** "Keep older + take newer link" button; default to keeping the older job.
+6. **Expired-job policy** (doc: https://claude.ai/artifact/K6SHrgpxzucMxFpDLqpwQW). ✅ **Change 1 deployed Oct 27** (`d35812a`): `App\Support\JobRetirement::retire()` is the only writer of status 4/5 in app/ — sets Expire_Date (kept on expired→trashed), updated_at, one job_status_history row per job changed, live-status guard. Tier date for undated rows = `Expire_Date ?? GREATEST(updated_at, LEAST(delete_at, now()))`. 713 bulk-expire rows backfilled from history. 2,947 retired pages moved from early 301 back to the 90-day closed page (incl. 197 of the 542 retired pages earning Google clicks). Tiers ≈ T1 7,163 · T2 16,419 · T3 77,190. `jobs.job_no` is NOT unique (3 CI3 legacy pairs) — writes key on jobs.id. **Indexing: keep noindex for now;** measure the 48 pages retired 22–27 Oct in GSC to ~24 Nov, then decide. Remaining changes: 2 better alternatives on the closed page, 3 empty-page guard, 4 backlink redirect list, 5 quota-full alternatives. Also check 143423 (FamilyMart Nakano-Sakaue) against FamilyMart's own page.
+7. **Admin redesign:** mockup https://claude.ai/artifact/QN9tMoh21Jzd66GDMtKptN (Find jobs + quick view). Search must read source facts from the pasted shigotoin text (server can't fetch shigotoin).
+8. FamilyMart profile for link-check.py (closed = 「ただいま、この店舗は募集を行っておりません。」).
+9. Monday 2 Nov: `/check-translator-duplicates 7` (target < 5%), `/dedupe-published plan`.
+10. Housekeeping: remove the merged worktrees (import-dup-check, retirement-date, xml-description).
 
-Docs made this session: Link Check team guide https://claude.ai/artifact/KoncfCvf1H1wjqFfPSaUzi · Expired job policy (above) · Weekly routine https://claude.ai/artifact/AdxpoufW1eQzHvy9muYWFK · Admin mockup (above).
+Docs made this session: Link Check team guide https://claude.ai/artifact/KoncfCvf1H1wjqFfPSaUzi · Expired job policy (above) · Weekly routine https://claude.ai/artifact/AdxpoufW1eQzHvy9muYWFK · Admin mockup (above) · Translation instructions v2 (project doc).
 
 ## 0b. Week of 2026-10-13 — ranked by revenue impact (historical)
 
