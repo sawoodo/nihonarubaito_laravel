@@ -184,13 +184,13 @@ def classify_familymart(url, res):
     boilerplate of every OPEN page -- it matched all three live jobs in the
     survey, and using it would expire the entire estate.
 
-    The 20 KB floor reads res["size"], which is curl's TRANSFER size and so is
-    the COMPRESSED size on a host that gzips. staff.family.co.jp does not: it
-    answered 38,330 bytes to both the uncompressed survey fetch and the
-    --compressed one here. If it ever turns gzip on, every open page drops
-    under the floor and returns ERROR -- which holds the rows, trips the 30%
-    error abort and stops the run. It never expires a job. That is the right
-    way round for this to break, but fix the floor if the run starts aborting.
+    The 20 KB floor measures the body WE RECEIVED, not res["size"]: curl's
+    size_download is the transfer size, which on a host that gzips is the
+    compressed length. staff.family.co.jp does not gzip today (38,330 bytes
+    either way), so the two agree -- but if it ever switches compression on,
+    size_download would drop under the floor and every open job would read
+    ERROR. Nothing would be expired, yet the whole FamilyMart scan would stop
+    until somebody noticed. The decompressed length cannot drift that way.
     """
     body, code = res["body"], res["code"]
     if FAMILYMART_CLOSED in body:
@@ -200,9 +200,10 @@ def classify_familymart(url, res):
     if code != "200":
         return "ERROR", "", f"http_{code}"
     title, _ = parse_title(body)
-    if "応募入力" in title and res["size"] > 20 * 1024:
+    received = len(body.encode("utf-8", "replace"))
+    if "応募入力" in title and received > 20 * 1024:
         return "OPEN", "", ""
-    return "ERROR", "", f"unrecognised_{res['size']}b_title:{title[:40]}"
+    return "ERROR", "", f"unrecognised_{received}b_received_title:{title[:40]}"
 
 
 SEJ_CLOSED = "募集を行っておりません"
