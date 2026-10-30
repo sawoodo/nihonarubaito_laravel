@@ -64,6 +64,21 @@ class MovedTargetMatcher
                     'reason' => 'company name matches the destination page'];
         }
 
+        // pageCompany() assumes the page writes "COMPANY/CODE rest of title",
+        // which shigotoin does. sftworks writes the employer code FIRST:
+        //   nwph_NWP205株式会社日本ワークプレイス NWP205の派遣社員の求人情報
+        // so the extracted head was 'nwph_NWP205株式会社日本ワークプレイス' and
+        // neither string contained the other — a miss on token order alone
+        // (job 155158, 2026-10-30). Comparing our company against the WHOLE
+        // normalised title is order-independent and strictly more permissive:
+        // the head is a substring of the title, so anything that matched above
+        // still matches here.
+        if ($ourCo !== '' && mb_strlen($ourCo) >= 3
+            && str_contains(self::normalizeCompany($page), $ourCo)) {
+            return ['same' => true, 'by' => 'company', 'shared' => $ourCo,
+                    'reason' => 'destination page title names our company'];
+        }
+
         foreach (self::places((string) $address) as $place) {
             if (mb_strpos($page, $place) !== false) {
                 return ['same' => true, 'by' => 'location', 'shared' => $place,
@@ -138,6 +153,61 @@ class MovedTargetMatcher
 
         return ['same' => false, 'id' => $from[0] ?? null,
                 'reason' => 'redirect changed the listing id — may be a different job'];
+    }
+
+    /**
+     * sftworks only: does the destination page's own printed id match the id in
+     * the link we would store?
+     *
+     * sftworks rotates work_ids. When the stored ?work_id= stops opening an
+     * entry form, the request lands on that listing's /detail/ page, whose
+     * <title> ends with the listing's CURRENT id — 「… ｜シフトワークス(W015799846)」.
+     * Relinking to that id is the same listing on a new id, which is what
+     * MOVED means. Verified 2026-10-30: all 15 held rows resolved this way and
+     * all 15 new ids opened a 応募入力 form.
+     *
+     * WHY THIS IS HOST-SCOPED, and must stay so. shigotoin also prints the
+     * destination's id in its title (【121487695】) next to a final_url of
+     * /offer/121487695, so a host-agnostic "title id equals url id" rule would
+     * auto-accept EVERY shigotoin redirect — including the three measured on
+     * 2026-10-30 that landed on a different employer, and the eight measured on
+     * 2026-10-22. On shigotoin the id agreeing with the title proves only that
+     * the page is self-consistent, never that the job is ours.
+     *
+     * The ownership evidence here is the redirect itself: the scan followed OUR
+     * stored link to reach that title. That is the same trust sameListingId()
+     * already places in the scan, and it is why this is a check on the id, not
+     * on the words in the title.
+     *
+     * LIMIT: it rests on 15 observations of one host on one day. If a sftworks
+     * row is ever found where the detail page is a different employer, this
+     * must go back to requiring a company or place match as well.
+     *
+     * @return array{same:bool,id:?string,reason:string}
+     */
+    public function sameSftworksListing(?string $finalUrl, ?string $pageTitle): array
+    {
+        $final = (string) $finalUrl;
+        if (! str_contains($final, 'sftworks.jp')) {
+            return ['same' => false, 'id' => null,
+                    'reason' => 'not a sftworks URL — rule does not apply'];
+        }
+        if (! preg_match('/[?&]work_id=([A-Z]\d{6,})/', $final, $u)) {
+            return ['same' => false, 'id' => null,
+                    'reason' => 'no work_id in the destination URL'];
+        }
+        if (! preg_match('/[(（]([A-Z]\d{6,})[)）]/u', (string) $pageTitle, $t)) {
+            return ['same' => false, 'id' => null,
+                    'reason' => 'destination page title prints no listing id'];
+        }
+        if ($u[1] !== $t[1]) {
+            return ['same' => false, 'id' => $u[1],
+                    'reason' => "URL id {$u[1]} is not the id the page prints ({$t[1]})"];
+        }
+
+        return ['same' => true, 'id' => $u[1],
+                'reason' => "sftworks listing {$u[1]} — the page we were "
+                          . 'redirected to prints this id as its own'];
     }
 
     /**
@@ -221,15 +291,32 @@ class MovedTargetMatcher
         $a = self::fold($address);
         $out = [];
 
-        if (preg_match_all('/([^\s都道府県市区町村郡]{1,6})([市区町村])/u', $a, $m, PREG_SET_ORDER)) {
+        // THIRD BUG, found 2026-10-30: 府 is a prefecture suffix AND an
+        // ordinary character in city names — 利府, 府中, 甲府, 別府, 防府. Two
+        // separate faults followed from treating it only as a suffix:
+        //
+        //   a) the city-name class excluded 府, so 利府町 could never yield
+        //      利府, and 府中市 yielded only the nonsense 中市;
+        //   b) ([^\s]{2,4}?)[都道府県] matched the 府 INSIDE 利府, so
+        //      宮城県宮城郡利府町利府字… produced the junk names 宮城郡利 and
+        //      町利 — and 利府, which the destination page did name, never
+        //      appeared at all (job 158220).
+        //
+        // The prefecture is only ever at the START of an address, so it is
+        // taken from there and removed; after that 府 is just a character.
+        $rest = $a;
+        if (str_starts_with($a, '北海道')) {
+            $out[] = '北海道';
+            $rest = mb_substr($a, 3);
+        } elseif (preg_match('/^(.{2,3}?)([都府県])/u', $a, $m)) {
+            $out[] = $m[1];
+            $rest = mb_substr($a, mb_strlen($m[1]) + 1);
+        }
+
+        if (preg_match_all('/([^\s市区町村郡]{1,6})([市区町村])/u', $rest, $m, PREG_SET_ORDER)) {
             foreach ($m as $hit) {
                 $out[] = $hit[1];
                 $out[] = $hit[1] . $hit[2];
-            }
-        }
-        if (preg_match_all('/([^\s]{2,4}?)[都道府県]/u', $a, $m)) {
-            foreach ($m[1] as $hit) {
-                $out[] = $hit;
             }
         }
         // Malls and buildings are strong location evidence.
