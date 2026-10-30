@@ -10,11 +10,14 @@ the apply steps consume. Generates only; applies nothing.
                               source page is gone, plus a backup CSV.
 
 WHAT COUNTS AS ACTIONABLE
-  OPEN                     confirmed live               -> extend
+  OPEN                     confirmed live               -> extend, NEVER relink
+                           (its upload row carries requested_url as final_url,
+                            so the admin page cannot rewrite apply_link)
   MOVED, id preserved      same listing, new URL        -> relink + extend
   MOVED, id changed        may be a different job       -> HELD, staff review
   MOVED, no id to compare  unverifiable                 -> HELD, staff review
   CLOSED / GONE            source page is gone          -> expire list
+  HELD                     the host profile is unsure   -> HELD, staff review
   ERROR                    the CHECK failed, not the job -> HELD, never expired
 
 Every row is re-checked against a LIVE snapshot before it reaches either file:
@@ -159,11 +162,31 @@ def main():
             held.append((job_no, 'ERROR', r.get('note', '')))
             continue
 
+        # HELD is a verdict in its own right, not a failed check: sftworks
+        # returns it when a work_id no longer opens an entry form but the
+        # listing is still advertised. It is never extended and never expired.
+        if cls == 'HELD':
+            held.append((job_no, 'HELD', r.get('note', '') or 'host profile held this row'))
+            continue
+
         if cls in ('CLOSED', 'GONE'):
             expire.append((job_no, r, job))
             continue
 
         if cls == 'OPEN':
+            # An OPEN row extends the review date; it never relinks. The admin
+            # page takes new_link from final_url for EVERY actionable row and
+            # rewrites apply_link whenever it differs, so a host that redirects
+            # on an open page would have its stored link replaced by wherever
+            # that redirect landed. ptj.sej.co.jp does exactly that: all 73 open
+            # rows on 2026-10-30 ended on
+            # /entry/entryform;jsessionid=<per-request id>, which would have
+            # replaced 73 real job URLs with dead session URLs.
+            #
+            # final_url stays in the results file as the scan recorded it; what
+            # goes into the UPLOAD is the link we want kept.
+            r = dict(r)
+            r['final_url'] = requested
             extend.append((job_no, r, job))
             continue
 
