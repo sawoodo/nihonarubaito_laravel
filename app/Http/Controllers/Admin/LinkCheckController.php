@@ -149,12 +149,26 @@ class LinkCheckController extends Controller
             foreach ($plan['apply'] as $row) {
                 // Guarded write: status must still be Published AND the stored
                 // apply_link must still be the URL the scan actually fetched.
+                // Only a MOVED row may rewrite apply_link. An OPEN row means
+                // the link we already hold still works, so its final_url is
+                // diagnostic, not a replacement.
+                //
+                // Without this, any host that redirects on an OPEN page has its
+                // stored link overwritten by wherever that redirect landed. On
+                // 2026-10-30 all 73 open ptj.sej.co.jp rows ended on
+                // /entry/entryform;jsessionid=<per-request id>: uploading that
+                // extend file would have replaced 73 real job URLs with dead
+                // session URLs, and two jobs (141400, 141857) already carry a
+                // pasted-in jsessionid, so the shape is not hypothetical.
+                $relink = $row['class'] === 'MOVED'
+                       && $row['new_link'] !== $row['current_link'];
+
                 $affected = DB::table('jobs')
                     ->where('job_no', $row['job_no'])
                     ->where('job_status_id', Job::STATUS_PUBLISHED)
                     ->where('apply_link', $row['current_link'])
                     ->update(array_filter([
-                        'apply_link' => $row['new_link'] !== $row['current_link'] ? $row['new_link'] : null,
+                        'apply_link' => $relink ? $row['new_link'] : null,
                         'delete_at'  => $row['new_delete_at'],
                     ], fn ($v) => $v !== null));
 
@@ -169,7 +183,7 @@ class LinkCheckController extends Controller
                     $this->extendReason($row),
                     $row['checked_at']);
 
-                if ($row['new_link'] !== $row['current_link']) {
+                if ($relink) {
                     $relinked++;
                     DB::table('job_apply_link_history')->insert([
                         'job_no'         => $row['job_no'],
@@ -587,6 +601,17 @@ class LinkCheckController extends Controller
             if ($byId['same']) {
                 $byJobNo[$jobNo]['note'] = $byId['reason'];
                 $byJobNo[$jobNo]['verified_by'] = 'listing_id';
+                continue;
+            }
+
+            // sftworks rotates work_ids, so the id always changes; the listing
+            // is identified by the id the destination page prints as its own.
+            // Host-scoped on purpose — see sameSftworksListing().
+            $bySft = $matcher->sameSftworksListing(
+                $r['final_url'] ?? '', $r['source_title'] ?? '');
+            if ($bySft['same']) {
+                $byJobNo[$jobNo]['note'] = $bySft['reason'];
+                $byJobNo[$jobNo]['verified_by'] = 'sftworks_listing_id';
                 continue;
             }
 
