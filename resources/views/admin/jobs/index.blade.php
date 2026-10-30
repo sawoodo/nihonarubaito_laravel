@@ -202,10 +202,6 @@
                                             <i class="fa fa-eye fa-2x"></i>
                                         </a>
 
-                                        <a href="{{ url("admin/jobs/{$job->job_no}/clone") }}" class="btn btn-xs tip" title="Clone">
-                                            <i class="fa fa-clone fa-2x"></i>
-                                        </a>
-
                                         @if (in_array($jobStatusId, [2, 4, 5]))
                                             <a href="{{ url("admin/jobs/{$job->job_no}/edit") }}" class="btn btn-xs text-warning tip" title="Edit">
                                                 <i class="fa fa-pencil fa-2x"></i>

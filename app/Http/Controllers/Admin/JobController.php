@@ -408,55 +408,6 @@ class JobController extends Controller
         ]);
     }
 
-    public function cloneJob(string $jobNo)
-    {
-        $original = Job::where('job_no', $jobNo)->first();
-
-        if (! $original) {
-            return redirect('/admin/jobs')->with('error', 'Job not found.');
-        }
-
-        $user = session('user');
-
-        $clone = Job::create([
-            'job_no' => '',
-            'title' => $original->title,
-            'company_name' => $original->company_name,
-            'description' => $original->description,
-            'job_category_id' => $original->job_category_id,
-            'prefecture_id' => $original->prefecture_id,
-            'area_id' => $original->area_id,
-            'station' => $original->station,
-            'address' => $original->address,
-            'japanese_level' => $original->japanese_level,
-            'working_hours' => $original->working_hours,
-            'working_days' => $original->working_days,
-            'wage' => $original->wage,
-            'wage_type_id' => $original->wage_type_id,
-            'wage_detail' => $original->wage_detail,
-            'trans_exp_id' => $original->trans_exp_id,
-            'transportation_detail' => $original->transportation_detail,
-            'benefits' => $original->benefits,
-            'requirement' => $original->requirement,
-            'apply_link' => $original->apply_link ?? '',
-            'img_link' => $original->img_link ?? '',
-            'img_path' => $original->img_path ?? '',
-            'img_name' => $original->img_name ?? '',
-            'img_ext' => $original->img_ext ?? '',
-            'img_id' => $original->img_id ?? 0,
-            'featured' => 0,
-            'send_email' => 0,
-            'lang_id' => $original->lang_id,
-            'user_id' => $user->id,
-            'job_status_id' => Job::STATUS_PENDING,
-            'delete_at' => date('Y-m-d', strtotime('+60 days')),
-        ]);
-
-        $clone->update(['job_no' => (string) $clone->id]);
-
-        return redirect('/admin/jobs')->with('success', 'Job has been cloned successfully.');
-    }
-
     /**
      * A bulk XML import saves a job the matcher recognised as a Draft titled
      * "[SAME AS N] ...". The prefix is the warning, so it must not reach the
@@ -483,10 +434,11 @@ class JobController extends Controller
     /**
      * The last check before a pending job goes live, on every 2 -> 3 path.
      *
-     * The create paths are not enough. The Clone button copies a job, apply
-     * link included, and runs no check at all; the edit form can give a job a
-     * live job's link at any time. 164337 and 164088 were both clones, sitting
-     * pending with a live job's link and one click from going public.
+     * The create paths are not enough: the edit form can give a job a live
+     * job's link at any time, "create anyway" leaves a known copy pending, and
+     * a job can sit pending for weeks while its twin is published. 164337 and
+     * 164088 sat there with a live job's link, one click from going public.
+     * They came from the Clone button, since removed.
      *
      * Returns the card to show, or null when nothing stands in the way. Only a
      * job leaving Pending is checked: Update & Publish on a live job changes

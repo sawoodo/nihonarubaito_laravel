@@ -97,7 +97,6 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('jobs/{jobNo}/edit', [Admin\JobController::class, 'edit'])->name('admin.jobs.edit');
     Route::post('jobs/{jobNo}/edit', [Admin\JobController::class, 'edit']);
     Route::get('jobs/{jobNo}/view', [Admin\JobController::class, 'view'])->name('admin.jobs.view');
-    Route::get('jobs/{jobNo}/clone', [Admin\JobController::class, 'cloneJob']);
     Route::get('jobs/{jobNo}/publish', [Admin\JobController::class, 'publish']);
     Route::post('jobs/{jobNo}/publish-anyway', [Admin\JobController::class, 'publishAnyway']);
     Route::get('jobs/{jobNo}/draft', [Admin\JobController::class, 'draft']);
@@ -123,7 +122,9 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('jobs/unfeaturing', [Admin\JobController::class, 'unfeaturing']);
     Route::post('jobs/unfeature', [Admin\JobController::class, 'unfeature']);
     Route::post('jobs/{status}/search', [Admin\JobController::class, 'search']);
-    Route::match(['get', 'post'], 'jobs/{status?}/{langId?}/{userId?}', [Admin\JobController::class, 'index'])->name('admin.jobs.index');
+    Route::match(['get', 'post'], 'jobs/{status?}/{langId?}/{userId?}', [Admin\JobController::class, 'index'])
+        ->where(['langId' => '[0-9]+', 'userId' => '[0-9]+'])
+        ->name('admin.jobs.index');
 
     // Subscribers (admin only)
     Route::get('subscribers/insights', [Admin\SubscriberController::class, 'insights'])->name('admin.subscribers.insights');

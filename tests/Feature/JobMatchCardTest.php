@@ -29,7 +29,7 @@ class JobMatchCardTest extends TestCase
 {
     use DatabaseTransactions;
 
-    /** 164337 as it stood on production: a Clone of 151033. */
+    /** 164337 as it stood on production, the twin of 151033. */
     private const COMPANY = '株式会社キャリア 新宿支店';
 
     private const LINK = 'https://shigotoin.com/offer/118218183';
@@ -98,7 +98,7 @@ class JobMatchCardTest extends TestCase
     }
 
     /** An exact twin: pending 900002 of live 900001. */
-    private function clonePair(): array
+    private function twinPair(): array
     {
         return [$this->job('900001', Job::STATUS_PUBLISHED), $this->job('900002', Job::STATUS_PENDING)];
     }
@@ -203,7 +203,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_publish_button_is_blocked_by_a_certain_match(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
         $posts = DB::table('fb_posts')->count();
 
         $this->get("/admin/jobs/{$pending}/publish")
@@ -217,7 +217,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_update_and_publish_is_blocked_but_keeps_the_edit(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
 
         $this->post("/admin/jobs/{$pending}/edit", $this->editForm(['update_and_publish' => '1', 'working_days' => 'Tue']))
             ->assertRedirect("/admin/jobs/{$pending}/edit")
@@ -239,17 +239,77 @@ class JobMatchCardTest extends TestCase
         $this->assertSame(Job::STATUS_PENDING, $this->jobStatus($pending));
     }
 
-    public function test_a_clone_is_caught_at_publish(): void
+    // ── Clone is gone ───────────────────────────────────────────────────
+
+    public function test_jobs_list_renders_without_clone(): void
+    {
+        $this->job('900001', Job::STATUS_PUBLISHED);
+        $this->job('900002', Job::STATUS_PENDING, ['title' => 'Warehouse Packing Part Time Job at Ueno Station']);
+
+        $this->get('/admin/jobs')->assertOk()
+            ->assertDontSee('/clone', false)
+            ->assertDontSee('title="Clone"', false)
+            ->assertSee(url('admin/jobs/900001/view'), false)
+            ->assertSee(url('admin/jobs/900001/edit'), false)
+            ->assertSee(url('admin/jobs/900002/publish'), false)
+            ->assertSee(url('admin/jobs/900002/trash'), false);
+    }
+
+    public function test_an_old_clone_link_creates_nothing(): void
     {
         $live = $this->job('900001', Job::STATUS_PUBLISHED);
+        $jobs = DB::table('jobs')->count();
 
-        $this->get("/admin/jobs/{$live}/clone")->assertRedirect('/admin/jobs');
+        $this->get("/admin/jobs/{$live}/clone")->assertNotFound();
 
-        $clone = (string) DB::table('jobs')->orderByDesc('id')->value('job_no');
-        $this->assertNotSame($live, $clone);
+        $this->assertSame($jobs, DB::table('jobs')->count());
+    }
 
-        $this->get("/admin/jobs/{$clone}/publish")->assertRedirect("/admin/jobs/{$clone}/edit");
-        $this->assertSame(Job::STATUS_PENDING, $this->jobStatus($clone));
+    // ── (b) the single import's XML link ────────────────────────────────
+
+    private function singleImport(string $formLink, string $linkElement): \Illuminate\Testing\TestResponse
+    {
+        $xml = str_replace(['<jobs>', '</jobs>'], '', $this->bulkXml($linkElement));
+
+        return $this->from('/admin/jobs/create-from-xml')->post('/admin/jobs/create-from-xml', [
+            'delete_at' => 20, 'lang_id' => 1, 'xml_data' => $xml, 'apply_link' => $formLink,
+        ]);
+    }
+
+    public function test_single_import_falls_back_to_apply_url(): void
+    {
+        $this->singleImport('', '<apply_url>' . self::LINK . '</apply_url>')->assertSessionHasNoErrors();
+
+        $this->assertSame(self::LINK, DB::table('jobs')->orderByDesc('id')->value('apply_link'));
+    }
+
+    public function test_single_import_form_link_beats_the_xml(): void
+    {
+        $this->singleImport('https://shigotoin.com/offer/333', '<apply_url>' . self::LINK . '</apply_url>')
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('https://shigotoin.com/offer/333', DB::table('jobs')->orderByDesc('id')->value('apply_link'));
+    }
+
+    public function test_single_import_with_no_link_anywhere_is_refused(): void
+    {
+        $jobs = DB::table('jobs')->count();
+
+        $this->singleImport('', '')->assertSessionHasErrors('apply_link');
+
+        $this->assertSame($jobs, DB::table('jobs')->count());
+    }
+
+    public function test_the_xml_link_reaches_the_card(): void
+    {
+        $this->job('900001', Job::STATUS_PUBLISHED);
+        $jobs = DB::table('jobs')->count();
+
+        $this->singleImport('', '<apply_url>' . self::LINK . '</apply_url>')
+            ->assertSessionHas('job_matches', fn ($c) => $c['new_link'] === self::LINK
+                && $c['certain'][0]['job_no'] === '900001');
+
+        $this->assertSame($jobs, DB::table('jobs')->count());
     }
 
     public function test_a_job_does_not_match_itself(): void
@@ -283,7 +343,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_publish_card_renders_inside_the_real_edit_page(): void
     {
-        [, $pending] = $this->clonePair();
+        [, $pending] = $this->twinPair();
 
         $edit = $this->followingRedirects()->get("/admin/jobs/{$pending}/publish")->assertOk();
 
@@ -342,7 +402,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_a_trashed_copy_points_the_next_import_at_the_keeper(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
 
         $this->post('/admin/jobs/match/relink-and-trash', [
             'job_no' => $live, 'duplicate_job_no' => $pending, 'expect_status' => 3,
@@ -360,7 +420,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_a_stale_card_changes_nothing(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
 
         // Someone relinked the live job after the card was drawn.
         DB::table('jobs')->where('job_no', $live)->update(['apply_link' => 'https://shigotoin.com/offer/222']);
@@ -402,7 +462,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_relink_and_trash_is_refused_to_an_advertiser(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
 
         $advertiser = new User;
         $advertiser->role_id = User::ROLE_ADVERTISER;
@@ -418,7 +478,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_publish_anyway_needs_ten_characters(): void
     {
-        [, $pending] = $this->clonePair();
+        [, $pending] = $this->twinPair();
 
         $this->post("/admin/jobs/{$pending}/publish-anyway", ['publish_reason' => ' too short '])
             ->assertRedirect("/admin/jobs/{$pending}/edit")
@@ -431,7 +491,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_publish_anyway_publishes_and_logs_the_reason(): void
     {
-        [$live, $pending] = $this->clonePair();
+        [$live, $pending] = $this->twinPair();
         $posts = DB::table('fb_posts')->count();
 
         $this->post("/admin/jobs/{$pending}/publish-anyway", ['publish_reason' => 'second shift at this shop'])
@@ -460,7 +520,7 @@ class JobMatchCardTest extends TestCase
 
     public function test_publish_anyway_is_admin_only(): void
     {
-        [, $pending] = $this->clonePair();
+        [, $pending] = $this->twinPair();
 
         $manager = new User;
         $manager->role_id = User::ROLE_MANAGER;

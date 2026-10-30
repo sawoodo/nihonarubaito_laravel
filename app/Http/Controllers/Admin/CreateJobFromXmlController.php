@@ -82,7 +82,8 @@ class CreateJobFromXmlController extends Controller
             $rules = [
                 'delete_at'  => 'required|integer|min:1',
                 'xml_data'   => 'required|string',
-                'apply_link' => 'required|string',
+                // Not required here: the XML may carry it. Enforced below.
+                'apply_link' => 'nullable|string',
             ];
 
             if ($user->role_id === User::ROLE_ADMIN) {
@@ -105,7 +106,13 @@ class CreateJobFromXmlController extends Controller
 
             $langId = ($user->role_id === User::ROLE_ADMIN) ? $validated['lang_id'] : ($user->lang_id ?? 1);
             $deleteInDays = max(1, (int) $validated['delete_at']);
-            $applyLink = $validated['apply_link'];
+            // The form's link wins; the XML's is the fallback. Resolved here,
+            // not inside createJobArray(), so the card shows and relinks the
+            // link that would actually be stored.
+            $applyLink = trim((string) ($validated['apply_link'] ?? '')) ?: $this->applyLinkFromXml($xml);
+            if ($applyLink === '') {
+                return back()->withInput()->withErrors(['apply_link' => 'The apply link field is required.']);
+            }
             $imgLink = (string) $request->input('img_link', '');
             $featured = $request->has('featured') ? 1 : 0;
             $sendEmail = $request->has('send_email') ? 1 : 0;
@@ -484,7 +491,7 @@ class CreateJobFromXmlController extends Controller
     }
 
     /**
-     * The bulk feed's link. The element is <apply_url>: this used to read
+     * The link in the XML itself. The element is <apply_url>: this used to read
      * <apply_link>, which the feed does not have, so every dropzone job was
      * stored with no link and JobMatcher lost its strongest signal on that
      * path. <apply_link> is still accepted for anything hand-written.

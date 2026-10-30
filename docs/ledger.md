@@ -4,6 +4,111 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-31 — the duplicates were coming from the Clone button, so Clone is gone and publishing is checked
+
+**Branch `worktree-match-publish-check`. NOT deployed.** The three job trashes
+below are live; everything else waits for merge and deploy.
+
+The owner reported that pressing Back on the import card saved a Draft. It
+doesn't: the card renders before any job exists. Gate 0 then blamed the
+dropzone, and that was wrong too. The real source only showed up when the rows
+were read properly:
+
+- 164337 and 164088 had `updated_by` NULL and `updated_at = date`, so nobody ever
+  edited them. That rules out "the link was pasted on the edit page".
+- Both had `delete_at = date + 60`: Clone's hard-coded value, and the manual form's
+  default, so a pointer rather than proof. Of ~1,150 jobs in 14 days, 2 had that
+  offset. Normal imports are +20 or +27.
+- The proof: the access log has `GET /admin/jobs/151033/clone` at 20:29:13 on 27 Oct
+  and `/164087/clone` at 20:43:39 on 24 Oct, to the second of each job's creation.
+
+Clone copied the apply link, ran no check and logged nothing. The icon sat right
+beside Edit on every row, so these look like misclicks.
+
+**Lesson: survey every path that creates a row, not just the ones named "create".
+When a theory explains a row, test it against that row's own columns and the
+access log before building on it.** `logs/nihonarubaito.com-YYYY-MM-DD.gz` on the
+server keeps admin GETs.
+
+### What changed on the branch
+
+- **Clone removed:** button, route and `cloneJob()`. The only link to it was the
+  button; the deployed JS has none. `fa-clone` on the Duplicates pages is just an icon.
+- **Publish check:** `JobMatcher` runs on the two 2→3 paths, the Publish button and
+  Update & Publish, excluding the job itself. There is no bulk publish in the app.
+  A certain match stops it and shows the card on the edit page, with "Update job N
+  with this link and trash this one" or "Publish anyway" (reason ≥ 10 characters,
+  admin only, logged as `published despite match with N: …`, source `publish-check`).
+  Only jobs leaving status 2 are checked, so Update & Publish on a status 4/5 job
+  is not.
+- **Discard button** on the import card, every role. Logs to the new
+  `job_match_discards` table; writes nothing to `jobs`.
+- **`<apply_url>`** is read by both XML paths, and the single-import form's link
+  wins over it. `apply_link` stopped being `required` in validation so the fallback
+  can fire; no link in either place is still refused.
+- `CLAUDE.md` now has the status label mapping. Nothing renamed.
+
+### Traps found on the way
+
+**The XML link was never read.** `createJobArray()` fell back to `$xml->apply_link`,
+but `jobs_preview.xml` carries `<apply_url>`. The `?:` looked like a working
+fallback for as long as it has existed. Caveat: that sample dates from 2025 and no
+current feed is in the repo, so confirm against a real file. `<apply_link>` stays
+accepted.
+
+**`source = 'dedupe'` is a contract, not a label.** `resolveDedupeTrashed()` follows
+only rows with that source and `duplicate of job K` in the reason. A trashed copy
+keeps its link, so under any other source the next import matches the copy and
+offers to revive it. All trashes here use it, including the card's button (batch
+prefix `pc-`).
+
+**Removing a route under a catch-all gives a 500, not a 404.** `/admin/jobs/N/clone`
+fell into `jobs/{status?}/{langId?}/{userId?}` and threw a TypeError on `int
+$langId`. That route now requires numeric `langId` and `userId`. An admin tab left
+open across a deploy would have hit this.
+
+**Status-1 `[SAME AS N]` rows are a dead end.** The listing-id query is any-status,
+so one would match a later import and show a button `relink()` refuses. `findMatches()`
+now skips status 1. Still open: the admin list hides status 1 and `JobRetirement`
+won't trash it, so once bulk jobs carry links these rows are visible only in the
+upload message, despite the "reviewer can delete the draft" comment in `uploadFile()`.
+
+**A link-only comparison misses a wrong-link duplicate.** Gate 0 paired 164027 with
+164028 because they shared a link, and called it "not a duplicate" on company. The
+branch's matcher, replayed on the pending queue, found it was a full twin of live
+164026 (same company, address, wage, title) carrying 164028's link by mistake.
+The link was not moved: it was never 164027's.
+
+### Production actions
+
+| job | what | batch | backup on the server |
+|---|---|---|---|
+| 164337 | trashed, duplicate of 151033 | `dd-20261030-162127` | `~/exports/pending-dup-trash-20261030-162127/` |
+| 164088 | trashed, duplicate of 164087 | same | same |
+| 164027 | trashed, duplicate of 164026 | `dd-20261030-220451` | `~/exports/pending-dup-trash-20261030-220451/` |
+
+All three were pending and never public. Each batch has `precheck.tsv`,
+`jobs-before.sql`, `history-before.sql`, `apply.sql` and `rollback.sql`. 163965 is
+left pending on the owner's decision: it holds 163731's offer link with a different
+company and category, so the publish check will not stop it.
+
+### Numbers before deploy
+
+Replay of the check over a production snapshot, taken before 164027 was trashed:
+53 of 568 pending jobs would be blocked, mostly old ones, and 3 of the 22 from the
+last 14 days. About 27 ms per job locally. Two pending twins block each other until
+one is merged or published anyway, and a job made with "create anyway" is asked for
+a reason again at publish.
+
+Tests: `tests/Feature/JobMatchCardTest.php`, against a throwaway MySQL database
+built from the production schema (setup in the file header), because the matcher
+uses `INTERVAL` arithmetic. Render checks cover the jobs list, edit, XML import and
+manual create pages as HTML; the built CSS and JS are not in this checkout, so the
+card has not been seen styled.
+
+**Deploy needs:** the `job_match_discards` migration, and the usual gates, ending
+with the config cache rebuilt.
+
 ## 2026-10-31 — Link Check page fixes deployed: only a MOVED row may rewrite a link
 
 `b91e7d0` (`a2200b8` rebased onto main; only docs had moved) is live:
