@@ -119,7 +119,7 @@ The route constraint was checked first: the only link filling `langId` and
 `userId` is the pagination, which uses integers, and 14 days of access logs held no
 non-numeric value there except the two Clone clicks.
 
-All 10 code files matched main on production before the swap. Everything went up as
+All 9 files being replaced matched main on production before the swap. Everything went up as
 `.new`, then the migration ran on its own with `--path`, then one `mv` chain swapped
 the code. Backup: `~/exports/pre-deploy-f2022b6/` (old files, schema, `migrations`
 table). Config cache rebuilt, `key_len=51 db=mysql env=production debug=false`.
