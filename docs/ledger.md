@@ -4,6 +4,46 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-31 — Link Check page fixes deployed: only a MOVED row may rewrite a link
+
+`b91e7d0` (`a2200b8` rebased onto main; only docs had moved) is live:
+`LinkCheckController.php` and `MovedTargetMatcher.php`. Admin-only. The four fixes
+and why they exist are in the 2026-10-30 entry below.
+
+Gate before deploy: `scripts/matcher-target-tests.php` 23 of 23, and 0 regressions
+over the 736 real triples with 6 rows newly verifiable, the same result as before
+the rebase. The corpus for that run is still the file made on 30 Oct.
+
+Production's two files matched main's md5 before the deploy, so nothing server-only
+was overwritten. Each file went up as `.new`, was linted and md5-checked, then
+renamed into place. The previous copies are in `~/exports/*.pre-b91e7d0.php` on the
+server. `laravel.log` stayed at 4,521 lines through deploy and verification.
+
+### Verifying an admin page without a browser session
+
+The preview needs a login and a real upload stages a file, so verification ran a
+throwaway script on the server: the full HTTP kernel for the GET, as the super-admin
+on an in-memory session, then the controller's own `parseResultsCsv()` and
+`buildPlan()` by reflection, the same code the upload path runs. `apply()` was never
+called. Row counts and `MAX(updated_at)` were taken before and after, and were
+identical.
+
+Result for `upload-sftworks-relink-20261030-173528.csv` (15 rows): page 200, 3 apply
+(155158, 158220, 159998, all MOVED, relink to the new `work_id`), 12 review ("apply_link
+changed since the scan"), 0 wrong target. All three were accepted by
+`sameSftworksListing()`, which the controller tries first, so its "15 observations
+of one host" limit now covers real relinks.
+
+Applying this does not resolve the three Open items directly. Their stored
+`requested_url` stops matching the job's link, and the next page load auto-resolves
+them, recorded as `fixed_by_hand`. Expected, though the label is not literally true.
+
+**A 403 from curl after a deploy is not proof of an outage.** Right after this one
+the homepage and the Link Check URL both answered 403 to bare curl. With a browser
+user agent both were fine (200 at 210 KB; 302 to login), the bare GET recovered
+within a minute, and `curl -I` stayed 403 from the proxy. Always verify with `-A`
+and a browser UA, and check `laravel.log`, before treating it as a fault.
+
 ## 2026-10-30 — the daily check covers five sites, and an extend file nearly rewrote 73 apply links
 
 First real `/daily-link-check` (a day later than planned, so 179 jobs were
