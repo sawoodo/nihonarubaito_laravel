@@ -4,6 +4,114 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-30 — the daily check covers five sites, and an extend file nearly rewrote 73 apply links
+
+First real `/daily-link-check` (a day later than planned, so 179 jobs were
+already past their review date). Window 3 days, 837 jobs due by 2 Nov. Three
+new host profiles shipped (`8daa16e`): FamilyMart, 7-Eleven and sftworks, which
+hold **1,974 of the 2,353 published jobs whose apply link is neither shigotoin
+nor baitoru** — hosts that had no automated check at all, because translators
+no longer check due jobs by hand.
+
+Scanned 732 jobs across five sites in parallel, one process per host:
+
+| host | scanned | OPEN | MOVED | CLOSED | GONE | HELD | ERROR |
+|---|---|---|---|---|---|---|---|
+| shigotoin | 224 | 153 | 25 | 46 | — | — | — |
+| baitoru | 12 | 11 | 1 | — | — | — | — |
+| familymart | 343 | 322 | — | 18 | — | — | 3 |
+| sej | 89 | 73 | — | 15 | — | — | 1 |
+| sftworks | 64 | 33 | — | 15 | 1 | 15 | — |
+
+**95 jobs expired** because their source page said closed (`be-20261030-165620`
+46 · `-181108` 18 · `-194316` 15 · `-181131` 16), **4 more** because the link
+now opens a different job (`-172529-diffjob`), and **8 trashed as duplicates**
+across three merge batches. Published 5,883 → 5,776. Every batch ran
+precheck-then-apply with the count matching, and two pages per host were
+verified cache-busted as Tier 1 closed pages (200, ~40 KB, `noindex`, no
+`JobPosting`).
+
+### The one that would have done damage
+
+The admin Link Check page takes `new_link` from `final_url` for **every**
+actionable row and rewrites `apply_link` whenever it differs — OPEN rows
+included. Every open 7-Eleven row redirects to
+`/entry/entryform;jsessionid=<per-request id>`, so uploading that extend file
+would have replaced **73 real job URLs with dead session URLs**. It was caught
+by simulating the page's own `buildPlan()` against the file before upload, not
+by reading the file.
+
+Two reasons it was not hypothetical: **68 jobs already store a `jsessionid`**
+(2 live, 66 retired, pasted in during late 2025), and the page had already
+applied four batches that day.
+
+Fixed in the generator, so it protects every host with no deploy: an OPEN row
+now carries `requested_url` as its `final_url`, which makes
+`new_link == current_link` and the rewrite impossible. The results file still
+records where the scan really landed — the scan record stays honest, only the
+upload carries the link to keep. The page-side half (`apply()` rewrites only
+for MOVED) is on `worktree-linkcheck-page-fixes`, not deployed.
+
+### Lessons
+
+- **A redirect target that another of our jobs already holds is a duplicate,
+  not a relink.** 7 of 16 proposed relink targets were already the live
+  `apply_link` of a newer job — a translator had re-translated the same
+  vacancy after the old offer id rotated. Relinking would have created 7
+  duplicate pairs, which is what the dedupe batches exist to remove. Check
+  "does any other live job already point at this offer" before every relink.
+  One was a three-way (158617 / 162573 / 160807 on one offer).
+- **Company + station + wage is not enough to identify an agency job.** Of 17
+  rows that agreed on all three, 5 were wrong: two pairs were duplicates of
+  each other, and 162405 was a different placement by the same agency at the
+  same station for the same wage (family restaurant service vs baked-sweets
+  sales). The role has to be compared too.
+- **A status code is not a closed signal on FamilyMart.** A dead store answers
+  with 「ただいま、この店舗は募集を行っておりません」 on a 404 of 6,745 bytes
+  here, and on a 200 of ~7 KB in the 24 Oct browser check. The sentence
+  decides, before the code. Never shorten it: 「ございません」 alone sits in the
+  boilerplate of every OPEN page and would have expired the whole estate.
+- **A quarter of due sftworks jobs rotate their `work_id`** (15 of 64). The
+  entry form stops opening but the listing is still advertised — all 15 still
+  had an apply button. That is a relink, not an expiry, and the new id is
+  printed in the detail page's own title. The verdict is `HELD`, never
+  extended and never expired, until the new id is read and the entry URL
+  fetched to confirm it opens a form.
+- **`size_download` is the transfer size, so it is the compressed length on a
+  host that gzips.** sftworks is the only one of the five that does (10,937
+  bytes for a page measured at 98,680 uncompressed), which is why its rule
+  reads the title and never the size. The FamilyMart 20 KB floor now measures
+  the decompressed body, so turning gzip on there cannot silently stop the
+  scan.
+- **Write nothing to a table before reading its schema.** A merge transaction
+  aborted on `Unknown column 'reason'` — `job_apply_link_history` carries
+  `http_code, num_redirects, checked_at` instead. It rolled back cleanly
+  (verified: published unchanged, 0 history rows) but it cost a run. The same
+  review found `checked_at` being written as ISO `2026-10-30T11:03:07Z`; this
+  database is **not strict**, so that would have been stored as a zero date
+  with only a warning. 13 literals converted.
+- **An identical answer for every input is a refusal, not a result** (again).
+  Lawson's entry URLs all return the same 20,098-byte `/jobfind-pc/errors/408`
+  page — a missing session, not a timeout. A two-step fetch with a cookie jar
+  reaches the real form (200, ~7 KB, 応募シート 記入) and a nonexistent id
+  gives a clean 404. The *public* detail URL `/jobfind-pc/job/<id>` 404s for
+  live jobs as well as dead ones, so a profile built on it would have expired
+  all 369 Lawson jobs. Only known-live controls made that visible.
+- **`府` is a prefecture suffix and an ordinary city character** — 利府, 府中,
+  甲府, 別府, 防府. In `MovedTargetMatcher::places()` this cost matches twice
+  over: the city-name class excluded it, and the prefecture regex matched the
+  府 inside 利府 and emitted junk (宮城郡利, 町利). Third bug of that family in
+  one class; the prefecture is only ever at the start of an address, so take
+  it from there and remove it.
+- **Parity is measured on verdicts, not on intermediate values.** The first
+  parity assertion for that fix ("no address loses a place name") failed on
+  16,487 addresses — correctly, because the fix exists to drop junk captures.
+  Replaying the old matcher against the new one over 736 real
+  (company, address, destination title) triples is the test that means
+  something: 0 regressions, 6 newly verifiable.
+
+---
+
 ## 2026-10-28 — the XML import was silently dropping formatting, and a CDATA script could reach a raw-rendered page
 
 **Three deploys:** `d14dd3f` listing-card truncation, `28aea03` import rewrite
