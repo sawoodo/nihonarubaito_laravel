@@ -99,6 +99,7 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     Route::get('jobs/{jobNo}/view', [Admin\JobController::class, 'view'])->name('admin.jobs.view');
     Route::get('jobs/{jobNo}/clone', [Admin\JobController::class, 'cloneJob']);
     Route::get('jobs/{jobNo}/publish', [Admin\JobController::class, 'publish']);
+    Route::post('jobs/{jobNo}/publish-anyway', [Admin\JobController::class, 'publishAnyway']);
     Route::get('jobs/{jobNo}/draft', [Admin\JobController::class, 'draft']);
     Route::get('jobs/{jobNo}/expire', [Admin\JobController::class, 'expire']);
     Route::get('jobs/{jobNo}/trash', [Admin\JobController::class, 'trash']);
@@ -111,6 +112,10 @@ Route::prefix('admin')->middleware('admin')->group(function () {
     // it writes apply_link, delete_at and (on a revival) job_status_id.
     Route::post('jobs/match/relink', [Admin\JobMatchController::class, 'relink'])
         ->name('admin.jobs.match.relink');
+    Route::post('jobs/match/relink-and-trash', [Admin\JobMatchController::class, 'relinkAndTrash'])
+        ->name('admin.jobs.match.relink-and-trash');
+    Route::post('jobs/match/discard', [Admin\JobMatchController::class, 'discard'])
+        ->name('admin.jobs.match.discard');
     // CI3-compatible aliases (JS uses these URL patterns)
     Route::post('jobs/image/attach', [Admin\JobController::class, 'attachImage']);
     Route::post('jobs/image/detach', [Admin\JobController::class, 'detachImage']);

@@ -56,6 +56,18 @@ Indonesia, Myanmar, South Asia. Revenue: Google AdSense + Amazon Associates +
 ValueCommerce affiliate (job apply clicks).
 
 ## Job Lifecycle System
+- **Status names differ between the admin UI and the code.** Both are in use and
+  neither gets renamed — the retirement and expiry work depends on the constants.
+  Say the id when it matters: "Draft" from the team means status 2, not `STATUS_DRAFT`.
+
+  | id | UI label (`job_status` table) | Code constant (`Job::`) |
+  |---|---|---|
+  | 1 | Auto Inserted | `STATUS_DRAFT` — bulk `[SAME AS N]` rows; hidden from the admin list |
+  | 2 | **Draft** | `STATUS_PENDING` — every new job, the normal state before publishing |
+  | 3 | Published | `STATUS_PUBLISHED` |
+  | 4 | Expired | `STATUS_EXPIRED` |
+  | 5 | Trashed | `STATUS_TRASHED` |
+  | 6 | Already Posted | `STATUS_QUOTA_FULL` |
 - Status 3 = Published (active, indexed) | Status 5 = Trashed (expired)
 - Tier 1 (0-90d expired): noindex, keep page live with related jobs
 - Tier 2 (90-180d): 301 redirect to parent location page

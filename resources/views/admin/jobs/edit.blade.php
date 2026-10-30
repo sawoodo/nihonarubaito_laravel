@@ -57,6 +57,11 @@
 
         @include('partials.admin.flash-message')
 
+        @if (session('job_matches'))
+            @include('admin.jobs.partials.match-card')
+            @include('admin.jobs.partials.match-publish-anyway')
+        @endif
+
         <form action="{{ url("admin/jobs/{$job->job_no}/edit") }}" method="POST" class="tw-mb-5">
             @csrf
 

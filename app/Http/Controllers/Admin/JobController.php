@@ -361,6 +361,9 @@ class JobController extends Controller
                 if ($blocked = $this->duplicateDraftBlock($freshJob)) {
                     return redirect("/admin/jobs/{$jobNo}/edit")->with('error', $blocked);
                 }
+                if ($card = $this->publishMatchCard($freshJob)) {
+                    return $this->showPublishCard($jobNo, $card);
+                }
 
                 $this->createFbPost($freshJob);
                 Job::where('job_no', $jobNo)->update(['job_status_id' => Job::STATUS_PUBLISHED]);
@@ -477,6 +480,54 @@ class JobController extends Controller
             . 'is a different job.';
     }
 
+    /**
+     * The last check before a pending job goes live, on every 2 -> 3 path.
+     *
+     * The create paths are not enough. The Clone button copies a job, apply
+     * link included, and runs no check at all; the edit form can give a job a
+     * live job's link at any time. 164337 and 164088 were both clones, sitting
+     * pending with a live job's link and one click from going public.
+     *
+     * Returns the card to show, or null when nothing stands in the way. Only a
+     * job leaving Pending is checked: Update & Publish on a live job changes
+     * nothing, and must not stop an admin correcting it.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function publishMatchCard($job): ?array
+    {
+        if ((int) $job->job_status_id !== Job::STATUS_PENDING) {
+            return null;
+        }
+
+        // job_no makes findMatches() skip the job itself.
+        $matches = JobMatcher::findMatches($job->only([
+            'job_no', 'title', 'company_name', 'address', 'station', 'wage',
+            'job_category_id', 'prefecture_id', 'apply_link',
+        ]));
+        $certain = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'certain'));
+        $review  = array_values(array_filter($matches, fn ($m) => $m['verdict'] === 'review'));
+
+        if (! $certain) {
+            return null;
+        }
+
+        return [
+            'certain'        => JobMatchApplier::forCard($certain),
+            'review'         => JobMatchApplier::forCard($review),
+            'new_link'       => (string) $job->apply_link,
+            'return_to'      => 'publish',
+            'publish_job_no' => (string) $job->job_no,
+        ];
+    }
+
+    private function showPublishCard(string $jobNo, array $card)
+    {
+        return redirect("/admin/jobs/{$jobNo}/edit")
+            ->with('error', 'Not published: this looks like a job we already have. See below.')
+            ->with('job_matches', $card);
+    }
+
     public function publish(string $jobNo)
     {
         $user = session('user');
@@ -494,9 +545,66 @@ class JobController extends Controller
         if ($blocked = $this->duplicateDraftBlock($job)) {
             return redirect('/admin/jobs')->with('error', $blocked);
         }
+        if ($card = $this->publishMatchCard($job)) {
+            return $this->showPublishCard($jobNo, $card);
+        }
 
         $this->createFbPost($job);
         $job->update(['job_status_id' => Job::STATUS_PUBLISHED]);
+
+        return redirect('/admin/jobs')->with('success', 'Job has been published.');
+    }
+
+    /**
+     * "Publish anyway" on the publish card. Same rule as "create anyway": it
+     * costs a sentence, and the sentence is kept. The check runs again rather
+     * than trusting the card, and the job_no logged is the one it finds now.
+     */
+    public function publishAnyway(Request $request, string $jobNo)
+    {
+        $user = session('user');
+        if ($user->role_id !== User::ROLE_ADMIN) {
+            return redirect('/admin/jobs')->with('error', 'Only admins can publish jobs.');
+        }
+
+        $job = Job::where('job_no', $jobNo)->first();
+        if (! $job) {
+            return redirect('/admin/jobs')->with('error', 'Job not found.');
+        }
+        if ((int) $job->job_status_id !== Job::STATUS_PENDING) {
+            return redirect('/admin/jobs')->with('error', "Job {$jobNo} is no longer pending — nothing was changed.");
+        }
+        if (! $job->area_id || $job->area_id == 0) {
+            return redirect('/admin/jobs')->with('error', 'Please set the area before publishing.');
+        }
+        if ($blocked = $this->duplicateDraftBlock($job)) {
+            return redirect('/admin/jobs')->with('error', $blocked);
+        }
+
+        $card = $this->publishMatchCard($job);
+        $reason = trim((string) $request->input('publish_reason', ''));
+
+        if ($card && mb_strlen($reason) < 10) {
+            return redirect("/admin/jobs/{$jobNo}/edit")
+                ->withErrors(['publish_reason' => 'Say in a few words why this is a different job (at least 10 characters).'])
+                ->withInput($request->only('publish_reason'))
+                ->with('job_matches', $card);
+        }
+
+        $this->createFbPost($job);
+
+        DB::transaction(function () use ($job, $card, $reason, $user) {
+            $job->update(['job_status_id' => Job::STATUS_PUBLISHED]);
+
+            if ($card) {
+                JobMatchApplier::logPublishedDespite(
+                    (string) $job->job_no,
+                    $card['certain'][0]['job_no'],
+                    $reason,
+                    $user->email ?? ('user:' . $user->id)
+                );
+            }
+        });
 
         return redirect('/admin/jobs')->with('success', 'Job has been published.');
     }

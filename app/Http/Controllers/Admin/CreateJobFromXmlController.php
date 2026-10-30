@@ -267,7 +267,7 @@ class CreateJobFromXmlController extends Controller
                     1,           // lang_id = English
                     0,           // featured = false
                     0,           // send_email = false
-                    '',          // apply_link = empty
+                    $this->applyLinkFromXml($jobXml),
                     '',          // img_link = empty
                     10,          // delete_at = 10 days
                     $user->id,   // user_id
@@ -463,7 +463,7 @@ class CreateJobFromXmlController extends Controller
             'transportation_detail' => (string) ($xml->transportation_access ?? ''),
             'benefits'             => $benefits,
             'requirement'          => $requirement,
-            'apply_link'           => $applyLink ?: (string) ($xml->apply_link ?? ''),
+            'apply_link'           => $applyLink,
             'img_link'             => $imgLink,
             'img_path'             => '',
             'img_name'             => '',
@@ -481,6 +481,17 @@ class CreateJobFromXmlController extends Controller
         // caller's duplicate check, so findDuplicate() compares the corrected
         // location rather than the wrong one.
         return $this->correctLocationFromAddress($payload, $payload['address']);
+    }
+
+    /**
+     * The bulk feed's link. The element is <apply_url>: this used to read
+     * <apply_link>, which the feed does not have, so every dropzone job was
+     * stored with no link and JobMatcher lost its strongest signal on that
+     * path. <apply_link> is still accepted for anything hand-written.
+     */
+    private function applyLinkFromXml(\SimpleXMLElement $xml): string
+    {
+        return trim((string) ($xml->apply_url ?? '')) ?: trim((string) ($xml->apply_link ?? ''));
     }
 
     /**

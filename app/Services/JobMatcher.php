@@ -388,6 +388,15 @@ class JobMatcher
                 continue;
             }
 
+            // A status-1 row is a bulk "[SAME AS N]" marker, not a job. Its
+            // link reaches it through the listing-id query, which is any
+            // status, and JobMatchApplier::relink() refuses a draft -- so it
+            // would block creation behind a button that then says no. Job N
+            // holds the same link and is matched in its own right.
+            if ((int) $b['job_status_id'] === Job::STATUS_DRAFT) {
+                continue;
+            }
+
             $listing = self::sameListing($a, $b);
             $sameCompany = $a['_co'] !== '' && $a['_co'] === $b['_co'];
 

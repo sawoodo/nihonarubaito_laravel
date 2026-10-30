@@ -3,15 +3,16 @@
 namespace App\Services;
 
 use App\Models\Job;
+use App\Support\JobRetirement;
 use Illuminate\Support\Facades\DB;
 
 /**
  * The write side of the import duplicate check: take the existing job the
  * matcher found, instead of creating a second copy of it.
  *
- * Why this is a service and not inline in the controller: three screens reach
- * it (single XML import, manual create, and the card's own button), and every
- * path must obey the same two rules.
+ * Why this is a service and not inline in the controller: four screens reach
+ * it (single XML import, manual create, the publish check, and the card's own
+ * buttons), and every path must obey the same two rules.
  *
  * RULE 1: `date` is never touched. It is the job's posted date — the model's
  * CREATED_AT, `datePosted` in the JobPosting schema, and the sort key of every
@@ -188,6 +189,95 @@ class JobMatchApplier
     }
 
     /**
+     * The publish check's button: pending job $dupNo turned out to be $keepNo,
+     * so $keepNo takes its link and $dupNo is trashed. One transaction, so a
+     * refused relink leaves the pending job exactly as it was.
+     *
+     * Trashed under source 'dedupe' with "duplicate of job K" on purpose: the
+     * copy keeps its link, and JobMatcher::resolveDedupeTrashed() reads that
+     * pair to point the next import of this listing at K. Under any other
+     * source the card would offer to revive the copy.
+     *
+     * @return array{ok: bool, message: string, revived: bool}
+     */
+    public static function relinkAndTrash(
+        string $keepNo,
+        string $dupNo,
+        int $expectKeepStatus,
+        string $expectKeepLink,
+        string $expectDupLink,
+        string $actor
+    ): array {
+        $stale = [
+            'ok' => false,
+            'revived' => false,
+            'message' => "Job {$dupNo} changed since this card was shown — nothing done. "
+                . 'Press Publish again for a fresh check.',
+        ];
+
+        if ($keepNo === $dupNo) {
+            return $stale;
+        }
+
+        $result = $stale;
+
+        DB::transaction(function () use (
+            $keepNo, $dupNo, $expectKeepStatus, $expectKeepLink, $expectDupLink, $actor, &$result
+        ) {
+            $dup = DB::table('jobs')->where('job_no', $dupNo)->lockForUpdate()->first();
+
+            if (! $dup || (int) $dup->job_status_id !== Job::STATUS_PENDING
+                || trim((string) $dup->apply_link) !== trim($expectDupLink)) {
+                return;
+            }
+
+            $relink = self::relink(
+                $keepNo,
+                (string) $dup->apply_link,
+                self::daysLeft($dup->delete_at),
+                $expectKeepStatus,
+                $expectKeepLink,
+                'publish-check',
+                $actor
+            );
+
+            if (! $relink['ok']) {
+                $result = $relink;
+
+                return;
+            }
+
+            $trash = JobRetirement::retire(
+                [$dupNo], Job::STATUS_TRASHED, 'dedupe', $actor,
+                "duplicate of job {$keepNo}", 'pc-' . now()->format('Ymd-His')
+            );
+
+            // The row is locked and pending, so this cannot happen. If it
+            // does, throwing undoes the relink rather than half-doing the pair.
+            if (! $trash['retired']) {
+                throw new \RuntimeException("Job {$dupNo} could not be trashed.");
+            }
+
+            $relink['message'] .= " Job {$dupNo} trashed as its duplicate.";
+            $result = $relink;
+        });
+
+        return $result;
+    }
+
+    /**
+     * Whole days until a pending job's review date, so the job it merges into
+     * inherits that date. relink() takes days and keeps the later of the two.
+     * The 60 is the default of the manual create form, for a date already past.
+     */
+    private static function daysLeft(?string $deleteAt): int
+    {
+        $days = $deleteAt ? (int) ceil((strtotime($deleteAt) - time()) / 86400) : 0;
+
+        return $days > 0 ? $days : 60;
+    }
+
+    /**
      * Record that a person looked at the match and said it was a different
      * job. The reason they typed is the whole point of the row: it is the only
      * evidence that the decision was made deliberately.
@@ -208,6 +298,25 @@ class JobMatchApplier
             'actor' => $actor,
             'batch' => self::batchId(),
             'reason' => mb_substr("created despite match with {$matchedJobNo}: {$text}", 0, 255),
+            'created_at' => now(),
+        ]);
+    }
+
+    /** The same record for "Publish anyway" at the publish check. */
+    public static function logPublishedDespite(
+        string $jobNo,
+        string $matchedJobNo,
+        string $text,
+        string $actor
+    ): void {
+        DB::table('job_status_history')->insert([
+            'job_no' => $jobNo,
+            'old_status' => Job::STATUS_PENDING,
+            'new_status' => Job::STATUS_PUBLISHED,
+            'source' => 'publish-check',
+            'actor' => $actor,
+            'batch' => self::batchId(),
+            'reason' => mb_substr("published despite match with {$matchedJobNo}: {$text}", 0, 255),
             'created_at' => now(),
         ]);
     }

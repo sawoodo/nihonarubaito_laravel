@@ -1,12 +1,19 @@
 {{--
-  The import duplicate card. Shared by the single XML import and manual create.
+  The duplicate card. Shared by the single XML import, manual create and the
+  publish check on the edit page.
 
   Expects session('job_matches'):
-    certain[]       matches that block creation
+    certain[]       matches that block creation or publishing
     review[]        matches shown for information only
-    new_link        the apply link being imported
-    delete_in_days  the review window the form asked for
-    return_to       'xml' | 'manual'
+    new_link        the apply link being imported, or the pending job's own
+    delete_in_days  the review window the form asked for (not set when publishing)
+    return_to       'xml' | 'manual' | 'publish'
+    publish_job_no  the pending job being published ('publish' only)
+
+  At an import no job exists yet, so the exits are relink, create anyway or
+  Discard. At publish the job already exists, so Discard does not apply: the
+  relink button also trashes it, and "Publish anyway" lives in
+  match-publish-anyway, included after this one.
 
   NOTE: always leave a space before a closing Blade directive. Blade's pattern
   requires a non-word character before the "@", so a directive written straight
@@ -30,6 +37,10 @@
         [\App\Models\User::ROLE_ADMIN, \App\Models\User::ROLE_MANAGER],
         true
     );
+    $publishing = ($m['return_to'] ?? '') === 'publish';
+    // A pending job with no usable link has nothing to give job N, and
+    // relink() would refuse it: do not offer the button.
+    $hasLink = \App\Services\JobMatcher::normLink($m['new_link'] ?? '') !== '';
 @endphp
 
 @if ($certain)
@@ -46,8 +57,14 @@
         </div>
         <div class="panel-body">
             <p class="tw-mb-3">
-                Do not create a second copy. If it is the same vacancy, give the existing
-                job the new apply link — its page keeps its history and its ranking.
+                @if ($publishing)
+                    Do not publish a second copy. If it is the same vacancy, give the existing
+                    job this job's apply link and trash this one — its page keeps its history
+                    and its ranking.
+                @else
+                    Do not create a second copy. If it is the same vacancy, give the existing
+                    job the new apply link — its page keeps its history and its ranking.
+                @endif
             </p>
 
             @foreach ($certain as $match)
@@ -80,7 +97,25 @@
                         </tr>
                     </table>
 
-                    @if ($mayRelink)
+                    @if ($mayRelink && $hasLink && $publishing)
+                    <form action="{{ url('admin/jobs/match/relink-and-trash') }}" method="POST" class="tw-inline">
+                        @csrf
+                        <input type="hidden" name="job_no" value="{{ $match['job_no'] }}">
+                        <input type="hidden" name="duplicate_job_no" value="{{ $m['publish_job_no'] }}">
+                        <input type="hidden" name="expect_status" value="{{ $match['job_status_id'] }}">
+                        <input type="hidden" name="expect_link" value="{{ $match['apply_link'] }}">
+                        <input type="hidden" name="expect_duplicate_link" value="{{ $m['new_link'] }}">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fa fa-link"></i>
+                            Update job #{{ $match['job_no'] }} with this link and trash this one
+                            @if (! is_null($match['retired_days_ago'])) (and republish it) @endif
+                        </button>
+                    </form>
+                    @elseif ($publishing && ! $hasLink)
+                        <p class="text-muted tw-mb-0">
+                            <em>This job has no apply link to give job #{{ $match['job_no'] }}. Add one, or trash this job from the list.</em>
+                        </p>
+                    @elseif ($mayRelink && ! $publishing)
                     <form action="{{ url('admin/jobs/match/relink') }}" method="POST" class="tw-inline">
                         @csrf
                         <input type="hidden" name="job_no" value="{{ $match['job_no'] }}">
@@ -102,13 +137,27 @@
                     @endif
                 </div>
             @endforeach
+
+            @unless ($publishing)
+                {{-- For every role: it changes nothing, it only records the decision. --}}
+                <form action="{{ url('admin/jobs/match/discard') }}" method="POST">
+                    @csrf
+                    <input type="hidden" name="matched_job_no" value="{{ $certain[0]['job_no'] }}">
+                    <input type="hidden" name="form" value="{{ $m['return_to'] }}">
+                    <input type="hidden" name="apply_link" value="{{ $m['new_link'] }}">
+                    <button type="submit" class="btn btn-default">
+                        <i class="fa fa-times"></i>
+                        Discard — don't save this job
+                    </button>
+                </form>
+            @endunless
         </div>
     </div>
 @endif
 
 @if ($review)
     <div class="alert alert-info tw-mb-4">
-        <strong><i class="fa fa-search"></i> Worth a look before you create this</strong>
+        <strong><i class="fa fa-search"></i> Worth a look before you {{ $publishing ? 'publish' : 'create' }} this</strong>
         <p class="tw-mb-2">
             These are not certain matches, so nothing is blocked — but check them:
             if one of them is this vacancy, update that job instead.
