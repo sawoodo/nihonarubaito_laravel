@@ -10,7 +10,7 @@ WHAT IT DOES: reads a TSV of published jobs, fetches each apply_link with
 redirects followed, and classifies the destination. It writes a CSV and
 NOTHING ELSE -- no database writes, no edits, no deploys.
 
-TWO HOSTS, TWO SIGNATURES. --host picks the profile (see HOSTS below). The
+FIVE HOSTS, FIVE SIGNATURES. --host picks the profile (see HOSTS below). The
 hosts do not fail the same way, so a single shared control set would be a
 decoration rather than a guard:
   shigotoin  a closed listing is HTTP 200 + 「この求人の募集は終了しました」
@@ -154,6 +154,123 @@ BLOCKED_MARKERS = ["緊急メンテナンス", "Request blocked", "Access Denied
 # shigotoin's is an offer id that was already 掲載終了 on 2026-10-21; baitoru's
 # is a purged legacy form (job 152684, retired) which 404s permanently.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Per-host classifiers
+#
+# shigotoin and baitoru share one rule: a closed marker, else a redirect means
+# MOVED, else OPEN. The three direct-employer sites do not fit that shape --
+# each needed its own function, verified against live pages on 2026-10-30
+# (survey output: scratchpad/hostprobe/probe.csv).
+#
+# A profile carrying "classifier" uses it INSTEAD of the generic path. The
+# maintenance/WAF check still runs first in every case: a blocked site must
+# never be read as a site full of closed jobs.
+# ---------------------------------------------------------------------------
+
+FAMILYMART_CLOSED = "ただいま、この店舗は募集を行っておりません"
+
+
+def classify_familymart(url, res):
+    """
+    staff.family.co.jp -- the apply form is the signal, the status code is not.
+
+    An open store answers 200 with the 応募入力 form at ~38 KB (3 of 3 live
+    jobs, 2026-10-30). A store that has stopped hiring answers with the
+    sentence above, and the code CANNOT be trusted with it: the probe saw it on
+    a 404 of 6,745 bytes, while the 2026-10-24 browser check saw a closed store
+    answer 200 at ~7 KB. So the sentence is read before the code.
+
+    Do NOT shorten the marker. 「ございません」 on its own appears in the
+    boilerplate of every OPEN page -- it matched all three live jobs in the
+    survey, and using it would expire the entire estate.
+
+    The 20 KB floor reads res["size"], which is curl's TRANSFER size and so is
+    the COMPRESSED size on a host that gzips. staff.family.co.jp does not: it
+    answered 38,330 bytes to both the uncompressed survey fetch and the
+    --compressed one here. If it ever turns gzip on, every open page drops
+    under the floor and returns ERROR -- which holds the rows, trips the 30%
+    error abort and stops the run. It never expires a job. That is the right
+    way round for this to break, but fix the floor if the run starts aborting.
+    """
+    body, code = res["body"], res["code"]
+    if FAMILYMART_CLOSED in body:
+        return "CLOSED", FAMILYMART_CLOSED, f"http_{code}"
+    if code in ("404", "410"):
+        return "GONE", "", f"http_{code}_without_the_sentence"
+    if code != "200":
+        return "ERROR", "", f"http_{code}"
+    title, _ = parse_title(body)
+    if "応募入力" in title and res["size"] > 20 * 1024:
+        return "OPEN", "", ""
+    return "ERROR", "", f"unrecognised_{res['size']}b_title:{title[:40]}"
+
+
+SEJ_CLOSED = "募集を行っておりません"
+
+
+def classify_sej(url, res):
+    """
+    ptj.sej.co.jp -- the entry URL redirects, and where it lands is the answer.
+
+    OPEN   two redirects to /entry/entryform  (title ...応募シート 記入)
+    CLOSED a redirect back to the store's 募集詳細 page carrying 募集を行って
+           おりません -- job 161860 on 2026-10-30, 24,570 bytes
+    GONE   404 (5,064-byte "404 Not Found")
+
+    The landing URL carries a per-request jsessionid
+    (/entry/entryform;jsessionid=1249CE41...?fontSize=fontM), so this host
+    never compares final_url with the requested url -- every row would read
+    MOVED. Only the path and the closed sentence decide.
+    """
+    body, code = res["body"], res["code"]
+    if code in ("404", "410"):
+        return "GONE", "", f"http_{code}"
+    if code != "200":
+        return "ERROR", "", f"http_{code}"
+    if SEJ_CLOSED in body:
+        return "CLOSED", SEJ_CLOSED, "landed_on_the_store_detail_page"
+    if "/entry/entryform" in res["final"].split("?", 1)[0]:
+        return "OPEN", "", ""
+    title, _ = parse_title(body)
+    return "ERROR", "", f"no_entry_form_{res['size']}b_title:{title[:40]}"
+
+
+SFT_CLOSED = ["募集終了", "募集を終了", "掲載終了"]
+SFT_GONE = "お探しの求人が見つかりません"
+
+
+def classify_sftworks(url, res):
+    """
+    sftworks.jp -- a ?work_id= either still opens an entry form or it does not.
+
+    OPEN   200 with title 応募入力. Size is no help on this host twice over:
+           uncompressed, open forms ran 92-119 KB and one still-open detail
+           page 249 KB; and sftworks is the one host here that gzips, so
+           res["size"] is the compressed length (10,937 for the same page the
+           survey measured at 98,680). The title decides, never the size.
+    CLOSED the form is gone and we land on /detail/ carrying 募集終了
+           -- job 157917
+    HELD   we land on /detail/ with no closed phrase -- job 159251, where the
+           work_id stopped resolving to a form while the job is still
+           advertised. NEVER expired; a human decides whether it is our job.
+    GONE   404 + お探しの求人が見つかりません
+    """
+    body, code = res["body"], res["code"]
+    title, _ = parse_title(body)
+    if code in ("404", "410"):
+        return "GONE", (SFT_GONE if SFT_GONE in body else ""), f"http_{code}"
+    if code != "200":
+        return "ERROR", "", f"http_{code}"
+    if "応募入力" in title:
+        return "OPEN", "", ""
+    if "/detail/" in res["final"]:
+        mk = [m for m in SFT_CLOSED if m in body]
+        if mk:
+            return "CLOSED", "|".join(mk), "entry_form_gone_detail_says_closed"
+        return "HELD", "", "entry_form_gone_but_the_listing_is_still_open"
+    return "ERROR", "", f"unrecognised_{res['size']}b_title:{title[:40]}"
+
+
 HOSTS = {
     "shigotoin": {
         "url_match": "shigotoin.com",
@@ -176,6 +293,53 @@ HOSTS = {
         "closed_verdict": "CLOSED",     # 200 + 掲載終了 on 2026-10-21
         # a real job page was 8.9-14.4 KB; the 404 page is ~4.8 KB
         "min_body_bytes": 3000,
+    },
+    # --- direct employers, added 2026-10-30 -------------------------------
+    "familymart": {
+        "url_match": "staff.family.co.jp",
+        "closed_markers": [FAMILYMART_CLOSED],
+        # 3 live jobs verified 200 + 応募入力 at ~38 KB on 2026-10-30
+        "open_controls": [
+            "https://staff.family.co.jp/dsaiyo/cofm/rec_applicants/new_entry/77901",   # job 164489
+            "https://staff.family.co.jp/dsaiyo/cofm/rec_applicants/new_entry/26642",   # job 164484
+            "https://staff.family.co.jp/dsaiyo/cofm/rec_applicants/new_entry/56207",   # job 164455
+        ],
+        # a store id that does not exist: 404 + the sentence, permanently
+        "closed_control": "https://staff.family.co.jp/dsaiyo/cofm/rec_applicants/new_entry/99999999",
+        "closed_verdict": "CLOSED",
+        "min_body_bytes": 3000,
+        "classifier": classify_familymart,
+    },
+    "sej": {
+        "url_match": "ptj.sej.co.jp",
+        "closed_markers": [SEJ_CLOSED],
+        # 3 live jobs verified 200 + 応募シート 記入 at ~28.9 KB on 2026-10-30
+        "open_controls": [
+            "https://ptj.sej.co.jp/arbeit/recruitment/jobfind-pc/entry/job/77515",     # job 164507
+            "https://ptj.sej.co.jp/arbeit/recruitment/jobfind-pc/entry/job/1129460",   # job 164480
+            "https://ptj.sej.co.jp/arbeit/recruitment/jobfind-pc/entry/job/1320825",   # job 164463
+        ],
+        # job 161860: lands on the 伊丹御願塚３丁目店 detail page, 募集を行って
+        # おりません. A real closed store, not a synthetic id.
+        "closed_control": "https://ptj.sej.co.jp/arbeit/recruitment/jobfind-pc/entry/job/sub/49282",
+        "closed_verdict": "CLOSED",
+        "min_body_bytes": 3000,
+        "classifier": classify_sej,
+    },
+    "sftworks": {
+        "url_match": "sftworks.jp",
+        "closed_markers": SFT_CLOSED,
+        # 3 live jobs verified 200 + 応募入力 on 2026-10-30
+        "open_controls": [
+            "https://sftworks.jp/entry/input?work_id=W015747595",   # job 164502
+            "https://sftworks.jp/entry/input?work_id=W015747593",   # job 164488
+            "https://sftworks.jp/entry/input?work_id=W015834060",   # job 164471
+        ],
+        # job 157917: ヤオコー 野木店, redirects to /detail/ with 募集終了
+        "closed_control": "https://sftworks.jp/entry/input?work_id=W015679054",
+        "closed_verdict": "CLOSED",
+        "min_body_bytes": 3000,
+        "classifier": classify_sftworks,
     },
     "baitoru": {
         "url_match": "baitoru.com",
@@ -278,6 +442,15 @@ def classify(url, res):
     """Return (classification, markers_found, note)."""
     if not res["ok"]:
         return "ERROR", "", res.get("err", "fetch_failed")
+
+    own = HOST.get("classifier")
+    if own is not None:
+        # The maintenance/WAF check runs for every host: a blocked site must
+        # never be read as a site full of closed jobs.
+        blocked = [m for m in BLOCKED_MARKERS if m in res["body"]]
+        if blocked:
+            return "ERROR", "", "blocked_or_maintenance:" + blocked[0]
+        return own(url, res)
 
     code, body = res["code"], res["body"]
 

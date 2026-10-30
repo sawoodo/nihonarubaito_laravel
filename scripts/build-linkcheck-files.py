@@ -15,6 +15,7 @@ WHAT COUNTS AS ACTIONABLE
   MOVED, id changed        may be a different job       -> HELD, staff review
   MOVED, no id to compare  unverifiable                 -> HELD, staff review
   CLOSED / GONE            source page is gone          -> expire list
+  HELD                     the host profile is unsure   -> HELD, staff review
   ERROR                    the CHECK failed, not the job -> HELD, never expired
 
 Every row is re-checked against a LIVE snapshot before it reaches either file:
@@ -157,6 +158,13 @@ def main():
 
         if cls == 'ERROR':
             held.append((job_no, 'ERROR', r.get('note', '')))
+            continue
+
+        # HELD is a verdict in its own right, not a failed check: sftworks
+        # returns it when a work_id no longer opens an entry form but the
+        # listing is still advertised. It is never extended and never expired.
+        if cls == 'HELD':
+            held.append((job_no, 'HELD', r.get('note', '') or 'host profile held this row'))
             continue
 
         if cls in ('CLOSED', 'GONE'):
