@@ -10,7 +10,9 @@ the apply steps consume. Generates only; applies nothing.
                               source page is gone, plus a backup CSV.
 
 WHAT COUNTS AS ACTIONABLE
-  OPEN                     confirmed live               -> extend
+  OPEN                     confirmed live               -> extend, NEVER relink
+                           (its upload row carries requested_url as final_url,
+                            so the admin page cannot rewrite apply_link)
   MOVED, id preserved      same listing, new URL        -> relink + extend
   MOVED, id changed        may be a different job       -> HELD, staff review
   MOVED, no id to compare  unverifiable                 -> HELD, staff review
@@ -172,6 +174,19 @@ def main():
             continue
 
         if cls == 'OPEN':
+            # An OPEN row extends the review date; it never relinks. The admin
+            # page takes new_link from final_url for EVERY actionable row and
+            # rewrites apply_link whenever it differs, so a host that redirects
+            # on an open page would have its stored link replaced by wherever
+            # that redirect landed. ptj.sej.co.jp does exactly that: all 73 open
+            # rows on 2026-10-30 ended on
+            # /entry/entryform;jsessionid=<per-request id>, which would have
+            # replaced 73 real job URLs with dead session URLs.
+            #
+            # final_url stays in the results file as the scan recorded it; what
+            # goes into the UPLOAD is the link we want kept.
+            r = dict(r)
+            r['final_url'] = requested
             extend.append((job_no, r, job))
             continue
 
