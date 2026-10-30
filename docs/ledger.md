@@ -6,8 +6,7 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ## 2026-10-31 — the duplicates were coming from the Clone button, so Clone is gone and publishing is checked
 
-**Branch `worktree-match-publish-check`. NOT deployed.** The three job trashes
-below are live; everything else waits for merge and deploy.
+**Deployed as `f2022b6`, with the `job_match_discards` migration.**
 
 The owner reported that pressing Back on the import card saved a Draft. It
 doesn't: the card renders before any job exists. Gate 0 then blamed the
@@ -30,7 +29,7 @@ When a theory explains a row, test it against that row's own columns and the
 access log before building on it.** `logs/nihonarubaito.com-YYYY-MM-DD.gz` on the
 server keeps admin GETs.
 
-### What changed on the branch
+### What changed
 
 - **Clone removed:** button, route and `cloneJob()`. The only link to it was the
   button; the deployed JS has none. `fa-clone` on the Duplicates pages is just an icon.
@@ -51,10 +50,9 @@ server keeps admin GETs.
 ### Traps found on the way
 
 **The XML link was never read.** `createJobArray()` fell back to `$xml->apply_link`,
-but `jobs_preview.xml` carries `<apply_url>`. The `?:` looked like a working
-fallback for as long as it has existed. Caveat: that sample dates from 2025 and no
-current feed is in the repo, so confirm against a real file. `<apply_link>` stays
-accepted.
+but the feed carries `<apply_url>`: the owner confirmed the v2 translation format
+uses it. The `?:` looked like a working fallback for as long as it has existed.
+`<apply_link>` stays accepted.
 
 **`source = 'dedupe'` is a contract, not a label.** `resolveDedupeTrashed()` follows
 only rows with that source and `duplicate of job K` in the reason. A trashed copy
@@ -86,11 +84,20 @@ The link was not moved: it was never 164027's.
 | 164337 | trashed, duplicate of 151033 | `dd-20261030-162127` | `~/exports/pending-dup-trash-20261030-162127/` |
 | 164088 | trashed, duplicate of 164087 | same | same |
 | 164027 | trashed, duplicate of 164026 | `dd-20261030-220451` | `~/exports/pending-dup-trash-20261030-220451/` |
+| 158220 | wage and title 1,040円 → 1,100円 | `wf-20261030-223108` | `~/exports/wage-fix-20261030-223108/` |
+| 159998 | wage and title 1,150円 → 1,200円 | same | same |
 
-All three were pending and never public. Each batch has `precheck.tsv`,
-`jobs-before.sql`, `history-before.sql`, `apply.sql` and `rollback.sql`. 163965 is
-left pending on the owner's decision: it holds 163731's offer link with a different
+The three trashed jobs were pending and never public. Each batch has
+`precheck.tsv`, `jobs-before.sql`, `apply.sql` and `rollback.sql`. 163965 is left
+pending on the owner's decision: it holds 163731's offer link with a different
 company and category, so the publish check will not stop it.
+
+The two wages were found while checking the sftworks relinks: the source pages
+listed a higher wage than ours. Only `wage`, `title` and `updated_at` changed, and
+each job has a `wage-fix` row in `job_status_history`. A title edit changes the
+URL: both old URLs 301 to the new ones, checked live. Stale wages are likely more
+widespread, so a minimum-wage count and a wage check inside the link check are on
+the work list.
 
 ### Numbers before deploy
 
@@ -106,8 +113,36 @@ uses `INTERVAL` arithmetic. Render checks cover the jobs list, edit, XML import 
 manual create pages as HTML; the built CSS and JS are not in this checkout, so the
 card has not been seen styled.
 
-**Deploy needs:** the `job_match_discards` migration, and the usual gates, ending
-with the config cache rebuilt.
+### Deploy and verification
+
+The route constraint was checked first: the only link filling `langId` and
+`userId` is the pagination, which uses integers, and 14 days of access logs held no
+non-numeric value there except the two Clone clicks.
+
+All 10 code files matched main on production before the swap. Everything went up as
+`.new`, then the migration ran on its own with `--path`, then one `mv` chain swapped
+the code. Backup: `~/exports/pre-deploy-f2022b6/` (old files, schema, `migrations`
+table). Config cache rebuilt, `key_len=51 db=mysql env=production debug=false`.
+`laravel.log` stayed at 4,521 lines.
+
+The three browser checks were first run on live code, through the full HTTP kernel
+as the super-admin, inside one database transaction that was always rolled back:
+re-pasting 164087's XML with the form link empty showed the card with
+`new_link` taken from `<apply_url>` and created no job; Discard logged one row and
+returned an empty form; publishing 163912 stopped on 163911 with the right buttons.
+Counts were identical afterwards. **This does not replace looking at it in a
+browser, which is still to do.**
+
+**Three small things that cost time on the way.**
+- zsh does not split `$FILES`, so `for f in $FILES` over a plain string is one
+  filename. Use an array. The first attempt stopped at its first md5 check with
+  nothing live touched, but its cleanup was a `find -name '*.new' -delete` over the
+  whole Laravel folder, which matched nothing only by luck. Clean up the exact
+  files you uploaded.
+- A CLI request through the kernel gets a 419 if the token is read before the session
+  has started. Send a GET first, as a browser does.
+- Give every verification curl `-m`. One unbounded curl stalled a finished deploy
+  for minutes, on a URL that answered in 1.7 s when retried.
 
 ## 2026-10-31 — Link Check page fixes deployed: only a MOVED row may rewrite a link
 

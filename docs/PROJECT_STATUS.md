@@ -1,6 +1,6 @@
 # Nihon Arubaito — Project Status (living document)
 
-**Last updated:** 2026-10-30 (Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
+**Last updated:** 2026-10-31 (Oct 31: Link Check page fixes deployed (`b91e7d0`), import fixes deployed (`f2022b6`): Discard button, publish check, Clone removed, `<apply_url>` read; 164337, 164088, 164027 trashed as duplicates; wages of 158220 and 159998 corrected. Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
 **Read this first in every new chat.** Update it at the end of any session that resolves, finds or decides something: edit lines in place, move finished items from *Pending* to *Resolved* with date + commit.
 Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `SETUP.md`. This file is the cross-chat summary.
 
@@ -14,14 +14,18 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    published jobs). Upload each extend CSV on the Link Check page, then
    `expire <folder>`. Due next: 3 Nov 236 · 4 Nov 374 · 5 Nov 380 — the 4–5 Nov
    wall is the ~2,000 jobs extended on 22–24 Oct coming round again.
-2. **Deploy the Link Check page fixes — `a2200b8`, branch
-   `worktree-linkcheck-page-fixes`, NOT deployed.** Four relink-decision fixes
-   with 23 passing assertions and 0 regressions over 736 real triples:
-   `apply()` rewrites `apply_link` only for MOVED; the 府 fix in `places()`;
-   the company compared against the whole title; and a host-scoped sftworks
-   rule. Touches an admin controller, so it needs the full scp + md5 +
-   config-cache discipline. Until it ships, the generator-side guard
-   (`d7f29e7`, on main) is what protects the daily run.
+2. ✅ **Link Check page fixes deployed Oct 31** (`b91e7d0`, was `a2200b8` before
+   the rebase): `apply()` rewrites `apply_link` only for MOVED; the 府 fix in
+   `places()`; the company compared against the whole title; a host-scoped
+   sftworks rule. 23 assertions, 0 regressions over 736 real triples. First real
+   use: batch `lc-20261030-222030-d5a98513` relinked 155158, 158220, 159998, all
+   confirmed on the source as the right jobs.
+   ✅ **Import fixes deployed Oct 31** (`f2022b6`, migration
+   `job_match_discards`): Discard button on the import card; `JobMatcher` on both
+   2→3 paths with "Update job N … and trash this one" or "Publish anyway" (reason
+   ≥ 10 characters); **Clone removed**; both XML paths read `<apply_url>`.
+   **Still to do: the owner's look at the card in a real browser** — verified on
+   live code through the full stack, but nobody has seen it styled.
 3. **Lawson — `crew.lawson.co.jp`, 369 published jobs, still no profile.** The
    408 page is a missing session: a two-step fetch with a cookie jar reaches
    the real form, and a nonexistent id 404s. Two things still needed before a
@@ -29,10 +33,15 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    element actually fixes the 408 (cookie, referer, or both). The public detail
    URL `/jobfind-pc/job/<id>` 404s for live jobs too, so it must never be used.
    Lawson stays in `due-other.tsv` for the team meanwhile.
-4. **Three sftworks rows on Open items** — 155158, 158220, 159998. Genuinely
-   our jobs (each new work_id was fetched and opens a 応募入力 form), but the
-   page cannot verify them by title. A human can confirm the relink now, or
-   they clear themselves once `a2200b8` ships.
+4. **Wage accuracy — next build, raised Oct 31.** 158220 showed 1,040円 against
+   a source of 1,100円 and 159998 showed 1,150円 against 1,200円; both fixed
+   (`wf-20261030-223108`). Next: (a) read-only count of published jobs whose
+   starting wage is below the October 2026 minimum of their prefecture, with the
+   minimums verified from MHLW first (the table in CLAUDE.md is Oct 2025);
+   (b) proposal: the link check reads the wage from each source page and flags
+   jobs whose stored wage differs. **sftworks S number:** when the `work_id`
+   rotated, `/detail/S…` stayed the same on 3 of 3 jobs. Check more on the next
+   sftworks scan; if it holds, propose it as the stable sftworks job id.
 5. **161536 + 163726 — possible duplicate.** Both live, both on
    `ptj.sej.co.jp/.../entry/job/sub/13867` once the session id is stripped. The
    session-free link is a better dedupe key for 7-Eleven than the raw
@@ -46,9 +55,14 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
 11. **Admin redesign:** mockup https://claude.ai/artifact/QN9tMoh21Jzd66GDMtKptN (Find jobs + quick view). Search must read source facts from the pasted shigotoin text (server can't fetch shigotoin).
 12. ✅ **FamilyMart profile shipped Oct 30** (`8daa16e`) — closed = the full sentence 「ただいま、この店舗は募集を行っておりません」, whatever the status code. 7-Eleven and sftworks shipped with it.
 13. Monday 2 Nov: `/check-translator-duplicates 7` (target < 5%), `/dedupe-published plan`.
-14. Housekeeping: remove the merged worktrees (import-dup-check, retirement-date,
-    xml-description, linkcheck-profiles). Keep `linkcheck-page-fixes` until
-    `a2200b8` is deployed. Also: 68 jobs store a `jsessionid` in `apply_link`
+14. **163965** is pending with 163731's link, and the publish check will not stop
+    it because the company and category differ. Team: paste its correct link from
+    the source, or trash it if the source is gone. Not urgent.
+15. Housekeeping: remove the merged worktrees (import-dup-check, retirement-date,
+    xml-description, linkcheck-profiles, linkcheck-page-fixes,
+    match-publish-check). Bulk `[SAME AS N]` rows are status 1, which the admin
+    list hides and `JobRetirement` will not trash: only the upload message names
+    them. Also: 68 jobs store a `jsessionid` in `apply_link`
     (2 live — 141400, 141857 — and 66 already retired, pasted in during late
     2025); harmless but worth stripping when convenient.
 
