@@ -10,6 +10,12 @@
 //                otherwise reject it.
 //   kanji        full names as they appear in the station field, with 駅.
 //   prefectures  ids. Two only where one name is two real places.
+//   areas        optional, for the "Explore Nearby" block: area page slug => name,
+//                from the areas holding 3+ of the station's jobs (2026-10-31).
+//                Check the URL first: Kashiwa, Oyama and Gifu have no working
+//                area page (the first two redirect to another prefecture).
+//   nearby       optional, up to 5 station slugs, nearest first. A station with
+//                no list shows no block, so the rollout goes page by page.
 //
 // A different station with a similar name (Shin-Osaka, Nishi-Funabashi,
 // Tobu-Utsunomiya) stays out on purpose: it has its own place in the listing.
@@ -19,26 +25,36 @@ return [
         'english' => ['Namba', 'Nanba', 'Osaka-Namba', 'Nankai-Namba', 'Kintetsu-Namba', 'JR-Namba'],
         'kanji' => ['難波駅', 'なんば駅', '大阪難波駅', '近鉄難波駅', '南海難波駅', '南海なんば駅', '地下鉄なんば駅'],
         'prefectures' => [3],
+        'areas' => ['chuo-ku-osaka' => 'Chuo-ku Osaka', 'naniwa-ku-osaka-shi' => 'Naniwa-ku Osaka'],
+        'nearby' => ['shinsaibashi', 'hommachi', 'yodoyabashi', 'tennoji', 'umeda'],
     ],
     'umeda' => [
         'english' => ['Umeda', 'Osaka-Umeda', 'Hankyu-Umeda', 'Hanshin-Umeda'],
         'kanji' => ['梅田駅', '大阪梅田駅', '阪急梅田駅', '阪神梅田駅', '地下鉄梅田駅'],
         'prefectures' => [3],
+        'areas' => ['kita-ku-osaka' => 'Kita-ku Osaka'],
+        'nearby' => ['osaka', 'yodoyabashi', 'hommachi', 'kyobashi', 'shinsaibashi'],
     ],
     'tennoji' => [
         'english' => ['Tennoji', 'Tennouji', 'JR-Tennoji'],
         'kanji' => ['天王寺駅', '地下鉄天王寺駅'],
         'prefectures' => [3],
+        'areas' => ['osaka-tennoji-ku' => 'Tennoji-ku Osaka', 'abeno-ku-osaka' => 'Abeno-ku Osaka'],
+        'nearby' => ['namba', 'shinsaibashi', 'kyobashi', 'hommachi', 'osaka'],
     ],
     'osaka' => [
         'english' => ['Osaka', 'JR-Osaka'],
         'kanji' => ['大阪駅'],
         'prefectures' => [3],
+        'areas' => ['kita-ku-osaka' => 'Kita-ku Osaka'],
+        'nearby' => ['umeda', 'yodoyabashi', 'kyobashi', 'hommachi', 'tennoji'],
     ],
     'shinsaibashi' => [
         'english' => ['Shinsaibashi'],
         'kanji' => ['心斎橋駅', '地下鉄心斎橋駅'],
         'prefectures' => [3],
+        'areas' => ['chuo-ku-osaka' => 'Chuo-ku Osaka'],
+        'nearby' => ['namba', 'hommachi', 'yodoyabashi', 'umeda', 'tennoji'],
     ],
     'tokyo' => [
         'english' => ['Tokyo'],
@@ -189,11 +205,15 @@ return [
         'english' => ['Yodoyabashi'],
         'kanji' => ['淀屋橋駅'],
         'prefectures' => [3],
+        'areas' => ['chuo-ku-osaka' => 'Chuo-ku Osaka'],
+        'nearby' => ['hommachi', 'umeda', 'kyobashi', 'shinsaibashi', 'osaka'],
     ],
     'hommachi' => [
         'english' => ['Hommachi', 'Honmachi'],
         'kanji' => ['本町駅'],
         'prefectures' => [3],
+        'areas' => ['chuo-ku-osaka' => 'Chuo-ku Osaka', 'nishi-ku-osaka' => 'Nishi-ku Osaka'],
+        'nearby' => ['yodoyabashi', 'shinsaibashi', 'namba', 'umeda', 'tennoji'],
     ],
     'urawa' => [
         'english' => ['Urawa'],
@@ -208,7 +228,9 @@ return [
     'kyobashi' => [
         'english' => ['Kyobashi'],
         'kanji' => ['京橋駅'],
-        'prefectures' => [1, 3],
+        'prefectures' => [3, 1],
+        'areas' => ['miyakojima-ku-osaka' => 'Miyakojima-ku Osaka', 'chuo-ku' => 'Chuo-ku Tokyo'],
+        'nearby' => ['osaka', 'umeda', 'tennoji', 'tokyo', 'hatchobori'],
     ],
     'oyama' => [
         'english' => ['Oyama'],

@@ -539,7 +539,33 @@ class ListingController extends Controller
             'prefecture_name' => $prefecture ? $prefecture->english : null,
             'noindex' => $noindex,
             'relatedFilters' => $relatedFilters,
+            'explore_nearby' => $station ? $this->exploreNearby($station) : [],
         ]);
+    }
+
+    /**
+     * The "Explore Nearby" links of a station that has them: its prefecture page
+     * or pages, its area pages, then the stations around it.
+     */
+    private function exploreNearby(array $station): array
+    {
+        if (empty($station['nearby'])) {
+            return [];
+        }
+
+        $links = [];
+        $names = Prefecture::whereIn('id', $station['prefectures'])->pluck('english', 'id');
+        foreach ($station['prefectures'] as $id) {
+            $links[] = ['url' => url('part-time-jobs-in-'.Str::slug($names[$id])), 'label' => "Part-Time Jobs in {$names[$id]}"];
+        }
+        foreach ($station['areas'] ?? [] as $slug => $name) {
+            $links[] = ['url' => url("part-time-jobs-in-{$slug}"), 'label' => "Part-Time Jobs in {$name}"];
+        }
+        foreach ($station['nearby'] as $slug) {
+            $links[] = ['url' => url("part-time-jobs-at-{$slug}-station"), 'label' => 'Jobs near '.Str::title(str_replace('-', ' ', $slug)).' Station'];
+        }
+
+        return $links;
     }
 
     /**

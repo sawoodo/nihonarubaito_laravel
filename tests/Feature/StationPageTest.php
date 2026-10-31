@@ -164,6 +164,46 @@ class StationPageTest extends TestCase
             ->assertSee('/jobs/910032/detail', false);
     }
 
+    public function test_explore_nearby_is_on_the_osaka_pages_only(): void
+    {
+        $withBlock = array_keys(array_filter(config('stations'), fn ($s) => ! empty($s['nearby'])));
+
+        $this->assertEqualsCanonicalizing(
+            ['namba', 'umeda', 'tennoji', 'osaka', 'shinsaibashi', 'yodoyabashi', 'hommachi', 'kyobashi'],
+            $withBlock
+        );
+
+        $this->get('/part-time-jobs-at-tokyo-station')->assertViewHas('explore_nearby', [])->assertDontSee('Explore Nearby');
+        $this->get('/part-time-jobs-at-asakusa-station')->assertDontSee('Explore Nearby');
+    }
+
+    public function test_the_namba_page_links_its_prefecture_areas_and_stations(): void
+    {
+        $page = $this->get('/part-time-jobs-at-namba-station');
+
+        $page->assertSeeInOrder(['Explore Nearby', 'Part-Time Jobs in Osaka', 'Part-Time Jobs in Chuo-ku Osaka', 'Part-Time Jobs in Naniwa-ku Osaka', 'Jobs near Shinsaibashi Station']);
+        foreach (['part-time-jobs-in-osaka', 'part-time-jobs-in-chuo-ku-osaka', 'part-time-jobs-in-naniwa-ku-osaka-shi', 'part-time-jobs-at-shinsaibashi-station', 'part-time-jobs-at-umeda-station'] as $url) {
+            $page->assertSee(url($url), false);
+        }
+        $this->assertCount(8, $page->viewData('explore_nearby'));
+    }
+
+    public function test_kyobashi_links_both_prefectures(): void
+    {
+        $this->get('/part-time-jobs-at-kyobashi-station')
+            ->assertSeeInOrder(['Part-Time Jobs in Osaka', 'Part-Time Jobs in Tokyo', 'Part-Time Jobs in Miyakojima-ku Osaka']);
+    }
+
+    public function test_nearby_lists_are_valid_and_avoid_the_broken_area_pages(): void
+    {
+        foreach (config('stations') as $slug => $station) {
+            $this->assertLessThanOrEqual(5, count($station['nearby'] ?? []), $slug);
+            $this->assertEmpty(array_diff($station['nearby'] ?? [], array_keys(config('stations'))), $slug);
+            $this->assertNotContains($slug, $station['nearby'] ?? []);
+            $this->assertEmpty(array_intersect(array_keys($station['areas'] ?? []), ['kashiwa', 'oyama', 'gifu']), $slug);
+        }
+    }
+
     public function test_an_unpublished_job_stays_off_the_page(): void
     {
         $this->job(910041, 'Omiya Station 大宮駅', 5, ['job_status_id' => Job::STATUS_PENDING]);

@@ -129,6 +129,20 @@
                 </div>
             @endif
 
+            {{-- Prefecture, area and station links of a station page --}}
+            @if (! empty($explore_nearby))
+                <div class="nearby-prefectures" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                    <h3>Explore Nearby</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                        @foreach ($explore_nearby as $link)
+                            <a href="{{ $link['url'] }}" style="display: inline-block; padding: 8px 16px; background: #fff; border: 1px solid #ddd; border-radius: 20px; text-decoration: none; color: #333;">
+                                {{ $link['label'] }}
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
         </div>
     </div>
 
