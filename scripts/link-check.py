@@ -272,7 +272,57 @@ def classify_sftworks(url, res):
     return "ERROR", "", f"unrecognised_{res['size']}b_title:{title[:40]}"
 
 
+LAWSON_CLOSED = "現在公開されていません"
+LAWSON_STORE = re.compile(r'<h1 class="title">(.*?)</h1>', re.S)
+
+
+def classify_lawson(url, res):
+    """
+    crew.lawson.co.jp -- needs a cookie jar, see "cookies" in the profile.
+
+    Without one, every entry URL lands on /errors/408, open or closed. With
+    one, an open job redirects to the session page /entry/entryform, with the
+    form and the store name; a job taken down answers 200 on the same URL with
+    「この案件は現在公開されていません」 in the title and 「この求人情報は現在
+    公開されていません」 in the body. Both share the marker. A nonexistent id
+    is a plain 404.
+
+    An open job is OPEN, never MOVED: /entry/entryform belongs to this one
+    session, so it must not reach apply_link. The store goes in the note, to
+    compare with our company_name. /jobfind-pc/job/<id> 404s for live jobs too:
+    never use it.
+    """
+    body, code = res["body"], res["code"]
+    if LAWSON_CLOSED in body:
+        return "CLOSED", LAWSON_CLOSED, f"http_{code}"
+    if code in ("404", "410"):
+        return "GONE", "", f"http_{code}"
+    title, _ = parse_title(body)
+    if code != "200" or "/errors/" in res["final"]:
+        return "ERROR", "", f"http_{code}_final:{res['final'][-30:]}"
+    store = LAWSON_STORE.search(body)
+    if "応募シート" in title and 'name="entrySheet1Form"' in body and store:
+        return "OPEN", "", "store:" + store.group(1).strip()
+    return "ERROR", "", f"unrecognised_title:{title[:40]}"
+
+
 HOSTS = {
+    "lawson": {
+        "url_match": "crew.lawson.co.jp",
+        "closed_markers": [LAWSON_CLOSED],
+        "cookies": True,
+        # 3 live jobs verified 200 + 応募シート 記入 + store name on 2026-10-31
+        "open_controls": [
+            "https://crew.lawson.co.jp/jobfind-pc/entry/job/84972",    # job 159905
+            "https://crew.lawson.co.jp/jobfind-pc/entry/job/8544",     # job 159916
+            "https://crew.lawson.co.jp/jobfind-pc/entry/job/106992",   # job 159947
+        ],
+        # job 162694: Machida, retired 2026-10-08. A real listing, not a made-up id.
+        "closed_control": "https://crew.lawson.co.jp/jobfind-pc/entry/job/138849",
+        "closed_verdict": "CLOSED",
+        "min_body_bytes": 3000,
+        "classifier": classify_lawson,
+    },
     "shigotoin": {
         "url_match": "shigotoin.com",
         # Verified against a known-closed page on 2026-10-21:
@@ -408,6 +458,9 @@ def fetch(url, timeout=40):
             "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "-H", "Accept-Language: ja,en-US;q=0.9,en;q=0.8",
             "--compressed",
+            # An empty -b turns cookies on for this one fetch: no jar is kept,
+            # so each job gets its own session.
+            *(["-b", ""] if HOST.get("cookies") else []),
             "-w", "\n__META__%{http_code}|%{num_redirects}|%{url_effective}|%{size_download}",
             url,
         ], capture_output=True, text=True, check=False)

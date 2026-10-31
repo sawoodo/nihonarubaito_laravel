@@ -4,6 +4,26 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-31 — Lawson can be checked after all; two upload files were left behind
+
+**Lawson.** Every entry URL landed on `/errors/408`, which read as a block. It was
+a missing session cookie: one curl with cookies on follows the redirect to the real
+form. Closed pages say 「現在公開されていません」 (retired jobs 162694 and 162532
+were the controls), and an open form names the store. An open job ends on the
+session page `/entry/entryform`, so OPEN rows keep our URL, the same protection the
+7-Eleven links needed on 2026-10-30. `company_name` is often the franchise operator,
+so a store is checked against the address: 24 of 51 matched by name, 27 by address.
+
+First run: 54 due, 51 open, 3 closed, 0 errors. 159373, expired 25 Oct with no
+history row, still had an open form and no twin at its address, so it was revived to
+7 Nov, not 1 Nov, which would have made it due the next day.
+
+**Left-behind files.** The FamilyMart (322) and sftworks (33) extend files of
+2026-10-30 were never applied, and nothing said so: 188 jobs sat past their date.
+Both applied 31 Oct. Gate 1 now stops on a file like that. It works row by row,
+because a batch doesn't record its file. The Expiring Jobs "today" tile also hid 127
+jobs already overdue from the day before.
+
 ## 2026-10-31 — station pages list the right station, not any text that contains its name
 
 **Deployed as `e9330c4`.** New `config/stations.php`, `app/Support/StationPattern.php`.

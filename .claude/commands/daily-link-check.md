@@ -1,5 +1,5 @@
 ---
-description: Daily due-job check (Mac, Japan VPN). Scans shigotoin + baitoru jobs due in the next N days (default 2), builds the Link Check upload and a guarded expire plan, lists direct-employer jobs for the team. Expires nothing until I say so.
+description: Daily due-job check (Mac, Japan VPN). Scans the six profiled sites for jobs due in the next N days (default 2), builds the Link Check upload and a guarded expire plan, lists direct-employer jobs for the team. Expires nothing until I say so.
 argument-hint: "[days=2] | expire <out-dir>"
 ---
 
@@ -78,16 +78,17 @@ q "apply_link LIKE '%baitoru.com%'"          > "$OUT/due-baitoru.tsv"
 q "apply_link LIKE '%staff.family.co.jp%'"   > "$OUT/due-familymart.tsv"
 q "apply_link LIKE '%ptj.sej.co.jp%'"        > "$OUT/due-sej.tsv"
 q "apply_link LIKE '%sftworks.jp%'"          > "$OUT/due-sftworks.tsv"
+q "apply_link LIKE '%crew.lawson.co.jp%'"    > "$OUT/due-lawson.tsv"
 q "apply_link NOT LIKE '%shigotoin.com%' AND apply_link NOT LIKE '%baitoru.com%'
    AND apply_link NOT LIKE '%staff.family.co.jp%' AND apply_link NOT LIKE '%ptj.sej.co.jp%'
-   AND apply_link NOT LIKE '%sftworks.jp%'" > "$OUT/due-other.tsv"
+   AND apply_link NOT LIKE '%sftworks.jp%' AND apply_link NOT LIKE '%crew.lawson.co.jp%'" > "$OUT/due-other.tsv"
 wc -l "$OUT"/due-*.tsv
 echo "OUT=$OUT"
 REMOTE
 mkdir -p ~/nihon-linkcheck && scp -r nihonarubaito:<OUT path> ~/nihon-linkcheck/
 ```
 
-Each file has a header line, so `wc -l` minus 1 = jobs. A header-only file is fine (nothing due on that site). If **all six** are header-only, say so and STOP — nothing to do today.
+Each file has a header line, so `wc -l` minus 1 = jobs. A header-only file is fine (nothing due on that site). If **all seven** are header-only, say so and STOP — nothing to do today.
 
 `due-other.tsv` is now only the sites with no profile (gigabaito, mynavi, anything new, and any job whose `apply_link` is not a URL). It is never scanned — it goes to the team in Gate 5.
 
@@ -101,13 +102,14 @@ python3 -I scripts/link-check.py --host baitoru    --input <D>/due-baitoru.tsv  
 python3 -I scripts/link-check.py --host familymart --input <D>/due-familymart.tsv --guards-only
 python3 -I scripts/link-check.py --host sej        --input <D>/due-sej.tsv        --guards-only
 python3 -I scripts/link-check.py --host sftworks   --input <D>/due-sftworks.tsv   --guards-only
+python3 -I scripts/link-check.py --host lawson     --input <D>/due-lawson.tsv     --guards-only
 ```
 
 All four guards must PASS (JP IP, open control OPEN/MOVED, closed control CLOSED/GONE, every row on this site). **Any FAIL → STOP for that site** — a host whose closed control stops firing would read every job as open. Skip a site whose file is header-only.
 
 Then scan:
 
-**One process per host, all five in parallel.** They are five different sites, so the 6 s gap applies per host, not across them. Never two processes on the same host.
+**One process per host, all six in parallel.** They are six different sites, so the 6 s gap applies per host, not across them. Never two processes on the same host.
 
 ```bash
 python3 -I scripts/link-check.py --host shigotoin  --input <D>/due-shigotoin.tsv  --output <D>/results-shigotoin.csv  --limit 0 --delay 6
@@ -115,6 +117,7 @@ python3 -I scripts/link-check.py --host baitoru    --input <D>/due-baitoru.tsv  
 python3 -I scripts/link-check.py --host familymart --input <D>/due-familymart.tsv --output <D>/results-familymart.csv --limit 0 --delay 6
 python3 -I scripts/link-check.py --host sej        --input <D>/due-sej.tsv        --output <D>/results-sej.csv        --limit 0 --delay 6
 python3 -I scripts/link-check.py --host sftworks   --input <D>/due-sftworks.tsv   --output <D>/results-sftworks.csv   --limit 0 --delay 6
+python3 -I scripts/link-check.py --host lawson     --input <D>/due-lawson.tsv     --output <D>/results-lawson.csv     --limit 0 --delay 6
 ```
 
 `--limit 0` = every row. Rough time per host: jobs × 6 s (175 jobs ≈ 18 min), so the run takes as long as the biggest host — FamilyMart is usually that one. If a run reports ERROR rows, run the **same command once more**: it resumes and retries the ERROR rows first. Do not loop beyond that.
@@ -128,7 +131,7 @@ python3 -I scripts/build-linkcheck-files.py --host shigotoin --results <D>/resul
   --snapshot <D>/due-shigotoin.tsv --out-dir <D> --require-complete <jobs in due-shigotoin.tsv>
 ```
 
-(same for each of the other four hosts that had jobs). `--require-complete` = the number of jobs exported, so a half-finished scan is refused.
+(same for each of the other five hosts that had jobs). `--require-complete` = the number of jobs exported, so a half-finished scan is refused.
 
 ## Gate 5 — report, then STOP
 
@@ -141,7 +144,7 @@ Then list, with paths:
 1. **Upload files** `upload-<site>-<ts>.csv` → I upload them at Admin → Link Check → Preview → Apply.
 2. **Expire plans** `expire-<site>-<ts>-apply.sql` with the job count each.
 3. **Held** jobs (ERROR, HELD, MOVED id_changed): job_no + reason, for the team.
-4. **Unprofiled jobs** from `due-other.tsv`: job_no, title, apply_link, delete_at — the team checks these by hand today. Lawson (`crew.lawson.co.jp`) has no profile yet: its entry URLs answer every request with the `/jobfind-pc/errors/408` page, so it cannot be scanned — see the note at the end of this file.
+4. **Unprofiled jobs** from `due-other.tsv`: job_no, title, apply_link, delete_at — the team checks these by hand today.
 
 **STOP.** Wait for `expire <D>`. (Upload first: the extend upload and the expire plan touch different jobs, but do them in that order so the Link Check page sees today's results.)
 
@@ -183,15 +186,19 @@ REMOTE
 
 ## Hosts without a profile
 
-**Lawson — `crew.lawson.co.jp`, 369 published jobs, no profile (2026-10-30).**
-Every live entry URL answers HTTP 200 but redirects to `/jobfind-pc/errors/408`
-("408 Request Timeout"), the same 20,098-byte page for all three live jobs
-tested. A nonexistent id gives a clean 404, so GONE is detectable, but open
-versus closed is not — we never reach a job page. That is the
-identical-answer-for-every-input shape that means *we are being refused*, not
-that the jobs are gone (ledger lesson 87). A profile built on it would be
-worthless. Lawson jobs stay in `due-other.tsv` for the team until a fetch that
-reaches a real job page is found.
-
 **Too few jobs to be worth a profile:** gigabaito.com (5), baito.mynavi.jp (3).
-Both go to the team through `due-other.tsv`.
+Both go to the team through `due-other.tsv`. Mynavi answers the same 403 for every
+page from the VPN, homepage included (2026-10-31), so a scan could not read it anyway.
+
+## Lawson (profile since 2026-10-31)
+
+`crew.lawson.co.jp` needs cookies on, which the `lawson` profile does per fetch.
+Without them every entry URL lands on `/errors/408`, open or closed. Never use the
+public URL `/jobfind-pc/job/<id>`: it 404s for live jobs too, so it would read every
+job as gone.
+
+Closed = 「現在公開されていません」, seen on real retired listings. An open job
+redirects to the session page `/entry/entryform`: the row stays OPEN and keeps our
+URL, so that page can never reach `apply_link`. The note carries the store name:
+in Gate 5, compare it with the job's address, because `company_name` is often the
+franchise operator (27 of 51 on 2026-10-31).

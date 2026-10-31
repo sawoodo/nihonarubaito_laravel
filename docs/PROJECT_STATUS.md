@@ -1,6 +1,6 @@
 # Nihon Arubaito — Project Status (living document)
 
-**Last updated:** 2026-10-31 (Oct 31: station pages fixed (`e9330c4`): the 40 sitemap pages match the station field from `config/stations.php`, Omiya 178 → 40, Hirose-dori 0 → 29. Link Check page fixes deployed (`b91e7d0`), import fixes deployed (`f2022b6`): Discard button, publish check, Clone removed, `<apply_url>` read; 164337, 164088, 164027 trashed as duplicates; wages of 158220 and 159998 corrected. Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
+**Last updated:** 2026-10-31 (Oct 31: Lawson profile live in the link check, 54 due jobs scanned: 51 extended, 3 expired, 159373 revived. Station pages fixed (`e9330c4`): the 40 sitemap pages match the station field from `config/stations.php`, Omiya 178 → 40, Hirose-dori 0 → 29. Link Check page fixes deployed (`b91e7d0`), import fixes deployed (`f2022b6`): Discard button, publish check, Clone removed, `<apply_url>` read; 164337, 164088, 164027 trashed as duplicates; wages of 158220 and 159998 corrected. Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
 **Read this first in every new chat.** Update it at the end of any session that resolves, finds or decides something: edit lines in place, move finished items from *Pending* to *Resolved* with date + commit.
 Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `SETUP.md`. This file is the cross-chat summary.
 
@@ -9,9 +9,9 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
 ## 0. Now (from 2026-10-30)
 
 **Next tasks, in order:**
-1. **Every morning, Japan VPN on: `/daily-link-check`.** Now covers five hosts
-   in parallel (shigotoin, baitoru, familymart, sej, sftworks = 1,974 + 3,530
-   published jobs). Upload each extend CSV on the Link Check page, then
+1. **Every morning, Japan VPN on: `/daily-link-check`.** Now covers six hosts
+   in parallel (shigotoin, baitoru, familymart, sej, sftworks, lawson). Gate 1
+   stops if an earlier upload file was never applied (`scripts/linkcheck-unapplied.py`). Upload each extend CSV on the Link Check page, then
    `expire <folder>`. Due next: 3 Nov 236 · 4 Nov 374 · 5 Nov 380 — the 4–5 Nov
    wall is the ~2,000 jobs extended on 22–24 Oct coming round again.
 2. ✅ **Link Check page fixes deployed Oct 31** (`b91e7d0`, was `a2200b8` before
@@ -26,13 +26,15 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    ≥ 10 characters); **Clone removed**; both XML paths read `<apply_url>`.
    **Still to do: the owner's look at the card in a real browser** — verified on
    live code through the full stack, but nobody has seen it styled.
-3. **Lawson — `crew.lawson.co.jp`, 369 published jobs, still no profile.** The
-   408 page is a missing session: a two-step fetch with a cookie jar reaches
-   the real form, and a nonexistent id 404s. Two things still needed before a
-   profile — a known-CLOSED Lawson store (the archive has none), and which
-   element actually fixes the 408 (cookie, referer, or both). The public detail
-   URL `/jobfind-pc/job/<id>` 404s for live jobs too, so it must never be used.
-   Lawson stays in `due-other.tsv` for the team meanwhile.
+3. ✅ **Lawson profile live Oct 31.** The 408 was a missing session: cookies alone
+   fix it, a Referer does nothing. Closed = 「現在公開されていません」, on real
+   retired listings; an open job's form names the store. First run, 54 due jobs:
+   51 extended (`lc-20261031-151037-d6729260`), 3 expired (`be-20261031-194650`),
+   confirmed by hand. **159373** was expired 25 Oct with its form still open:
+   revived to 7 Nov (`rv-20261031-159373`, rollback in `~/exports/daily-20261031/`).
+   The public URL `/jobfind-pc/job/<id>` 404s for live jobs too: never use it.
+   **Mynavi** (3 jobs) answers 403 to everything from the VPN, homepage included:
+   team checks by hand.
 4. **Wage accuracy — next build, raised Oct 31.** 158220 showed 1,040円 against
    a source of 1,100円 and 159998 showed 1,150円 against 1,200円; both fixed
    (`wf-20261030-223108`). Next: (a) read-only count of published jobs whose
@@ -50,9 +52,11 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    kanji and prefectures; listings across the 40 pages went 1,553 → 1,234.
    **Next:** `station-nav-links` (`3dc6e8d`, commented-out theme menu, 8.2 KB a
    page) rides with the next deploy. `station-explore-nearby` (`9c275ef`, Osaka's
-   8 pages) waits about a week, after the **owner exports the 28-day GSC baseline**
-   for those 8 URLs; compare 28 days of clicks, YoY same period, before the next
-   prefecture. **Area-slug bug:** `/part-time-jobs-in-kashiwa` and `-oyama` 301 to
+   8 pages) waits about a week, after the baseline saved on that branch
+   (`docs/reports/station-baseline-2026-10-28.md`). Measure mainly on impressions
+   and position of the 8 pages and their link targets, plus the GA4 event
+   `explore_nearby_click`; the other 32 pages stay as a control for clicks.
+   `station-edge-cases` (tests only) merges with it. **Area-slug bug:** `/part-time-jobs-in-kashiwa` and `-oyama` 301 to
    the wrong prefecture (55 + 19 jobs with no reachable area page), separate job.
 5. **161536 + 163726 — possible duplicate.** Both live, both on
    `ptj.sej.co.jp/.../entry/job/sub/13867` once the session id is stripped. The
