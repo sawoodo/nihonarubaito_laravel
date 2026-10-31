@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\StationPattern;
 use Illuminate\Database\Eloquent\Model;
 
 class Job extends Model
@@ -214,6 +215,17 @@ class Job extends Model
         }
 
         return $query->orderBy('jobs.id', 'desc');
+    }
+
+    /**
+     * Jobs at one station from config/stations.php. Reads the station field only:
+     * the plain search would match "omiya station" inside Sannomiya and put a
+     * description's passing mention on the page.
+     */
+    public function scopeAtStation($query, array $station)
+    {
+        return $query->whereRaw('jobs.station REGEXP ?', [StationPattern::for($station)])
+            ->whereIn('jobs.prefecture_id', $station['prefectures']);
     }
 
     public function scopeAllForFrontend($query, string $langName, int $langId)

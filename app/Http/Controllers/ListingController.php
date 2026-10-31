@@ -313,7 +313,14 @@ class ListingController extends Controller
         $page = max(1, $page ?? 1);
         $offset = ($page - 1) * self::PER_PAGE;
 
-        $totalRows = Job::search($langId, $langName, $query, $prefectureId, $areaId)->count();
+        // A station in config/stations.php matches on its station field; any other
+        // slug stays a text search.
+        $station = $isStationPage ? $this->stationFor($uri['query']) : null;
+        $search = fn () => $station
+            ? Job::search($langId, $langName)->atStation($station)
+            : Job::search($langId, $langName, $query, $prefectureId, $areaId);
+
+        $totalRows = $search()->count();
 
         // Signal to ApplyCacheHeaders: never CDN-cache an empty render.
         // An empty page cached for 30 min is served to every cookieless visitor
@@ -322,7 +329,7 @@ class ListingController extends Controller
             $request->attributes->set('skip_cache_empty', true);
         }
 
-        $jobs = Job::search($langId, $langName, $query, $prefectureId, $areaId)
+        $jobs = $search()
             ->skip($offset)
             ->take(self::PER_PAGE)
             ->get();
@@ -533,6 +540,16 @@ class ListingController extends Controller
             'noindex' => $noindex,
             'relatedFilters' => $relatedFilters,
         ]);
+    }
+
+    /**
+     * The config/stations.php entry for a "namba-station" query, if there is one.
+     */
+    private function stationFor(string $querySlug): ?array
+    {
+        return str_ends_with($querySlug, '-station')
+            ? config('stations')[substr($querySlug, 0, -strlen('-station'))] ?? null
+            : null;
     }
 
     /**
