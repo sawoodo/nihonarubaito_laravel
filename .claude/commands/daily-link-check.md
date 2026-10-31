@@ -33,6 +33,30 @@ ssh nihonarubaito 'whoami && date -u && cd www/nihonarubaito.com/public_html/lar
 
 Expect: `u4602-zegubfmytubg`; today's overdue report present (its row count = jobs that passed their date unchecked — they are included in the export below anyway). No report for today → the 02:00 scheduler didn't run: say so, carry on.
 
+Then check that no earlier upload file was left behind (read-only). On 2026-10-30 two of them were never applied, and 188 jobs sat past their date with nothing on the page saying why:
+
+```bash
+TMP=$(mktemp -d)
+ssh nihonarubaito "bash -s" > "$TMP/both.tsv" <<'REMOTE'
+set -euo pipefail
+cd ~/www/nihonarubaito.com/public_html/laravel
+val() { grep -E "^$1=" .env | cut -d= -f2- | sed -e 's/^["'"'"']//' -e 's/["'"'"']$//'; }
+CNF=$(mktemp); chmod 600 "$CNF"; trap 'rm -f "$CNF"' EXIT
+printf '[client]\nuser="%s"\npassword="%s"\nhost="%s"\n' "$(val DB_USERNAME)" "$(val DB_PASSWORD)" "$(val DB_HOST)" > "$CNF"
+q() { mysql --defaults-extra-file="$CNF" --batch "$(val DB_DATABASE)" -e "$1"; }
+q "SELECT job_no, delete_at FROM jobs WHERE job_status_id = 3"
+echo '@@'
+q "SELECT job_no, source_checked_at FROM job_status_history
+   WHERE source_checked_at IS NOT NULL AND created_at >= NOW() - INTERVAL 30 DAY"
+REMOTE
+sed '/^@@$/,$d' "$TMP/both.tsv" > "$TMP/jobs.tsv"
+sed '1,/^@@$/d' "$TMP/both.tsv" > "$TMP/history.tsv"
+python3 -I scripts/linkcheck-unapplied.py --jobs "$TMP/jobs.tsv" --history "$TMP/history.tsv"; echo "exit $?"
+rm -rf "$TMP"
+```
+
+`exit 0` → go on. **`exit 1` → STOP** and show the "APPLY THESE FIRST" list: I upload those on the Link Check page, then this gate runs again. A failed export also ends non-zero: read the message, it is not a list. `TOO OLD` lines are a notice, not a stop: don't upload those, today's export scans the same jobs again.
+
 ## Gate 2 — export the due jobs (read-only)
 
 ```bash
