@@ -97,6 +97,40 @@ class StationPageTest extends TestCase
         $this->assertSame($expected, $this->stationMatches($slug, $station), "{$slug} / {$station}");
     }
 
+    /**
+     * Today's behaviour, not a wish list. The ones that don't match were left on
+     * purpose: none of them appeared for these 40 stations in the 5,860 published
+     * station fields on 2026-10-31.
+     */
+    public static function writtenVariations(): array
+    {
+        return [
+            'all caps' => ['namba', 'NAMBA STATION', 3, true],
+            'all lowercase' => ['namba', 'namba station', 3, true],
+            'two spaces' => ['namba', 'Namba  Station', 3, false],
+            'full-width space' => ['namba', 'Namba　Station', 3, false],
+            'macron Tennoji' => ['tennoji', 'Tennōji Station', 3, false],
+            'macron Omiya' => ['omiya', 'Ōmiya Station', 5, false],
+            'macron Kyoto' => ['kyoto', 'Kyōto Station', 13, false],
+            'macron Osaka' => ['osaka', 'Ōsaka Station', 3, false],
+            'Sta.' => ['namba', 'Namba Sta.', 3, false],
+            'Stn' => ['namba', 'Namba Stn', 3, false],
+        ];
+    }
+
+    // Through the column, not a literal: its collation is what the page compares against.
+    #[DataProvider('writtenVariations')]
+    public function test_how_a_written_variation_of_the_name_is_treated(string $slug, string $station, int $prefectureId, bool $expected): void
+    {
+        $this->job(910051, $station, $prefectureId);
+
+        $this->assertSame(
+            $expected,
+            Job::where('jobs.id', 910051)->atStation(config('stations')[$slug])->exists(),
+            "{$slug} / {$station}"
+        );
+    }
+
     public function test_the_config_covers_every_sitemap_station_with_valid_patterns(): void
     {
         $sitemap = (new \ReflectionClass(\App\Http\Controllers\SitemapController::class))->getConstant('STATION_SLUGS');
