@@ -171,6 +171,7 @@ ValueCommerce affiliate (job apply clicks).
 - app/Http/Controllers/Admin/JobController.php — admin job management
 - app/Http/Controllers/Admin/CreateJobFromXmlController.php — XML import (img_link null crash open)
 - app/Services/JobDeduplicator.php — duplicate detection
+- config/stations.php + app/Support/StationPattern.php — which jobs a station page lists
 - resources/views/frontend/layouts/frontend.blade.php — main layout
 - resources/views/frontend/jobs/detail.blade.php — job detail
 - resources/views/frontend/layouts/scripts.blade.php — staggered JS

@@ -1,6 +1,6 @@
 # Nihon Arubaito — Project Status (living document)
 
-**Last updated:** 2026-10-31 (Oct 31: Link Check page fixes deployed (`b91e7d0`), import fixes deployed (`f2022b6`): Discard button, publish check, Clone removed, `<apply_url>` read; 164337, 164088, 164027 trashed as duplicates; wages of 158220 and 159998 corrected. Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
+**Last updated:** 2026-10-31 (Oct 31: station pages fixed (`e9330c4`): the 40 sitemap pages match the station field from `config/stations.php`, Omiya 178 → 40, Hirose-dori 0 → 29. Link Check page fixes deployed (`b91e7d0`), import fixes deployed (`f2022b6`): Discard button, publish check, Clone removed, `<apply_url>` read; 164337, 164088, 164027 trashed as duplicates; wages of 158220 and 159998 corrected. Oct 30: first five-host /daily-link-check — 95 jobs expired on a checked source page, 8 duplicates merged, FamilyMart/7-Eleven/sftworks profiles live (`8daa16e`); an extend file was one upload away from rewriting 73 apply links to session URLs. Oct 28: XML import formatting fixes + translation instructions v2. Oct 25–27 session: Link Check team guide, expired-job policy, weekly routine, spam-backlink review + disavow file, translator duplicate check, first published-duplicate merge, auto-trash report-only, /daily-link-check, storage backups moved out of the web root. Earlier merges: see git history of this file.)
 **Read this first in every new chat.** Update it at the end of any session that resolves, finds or decides something: edit lines in place, move finished items from *Pending* to *Resolved* with date + commit.
 Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `SETUP.md`. This file is the cross-chat summary.
 
@@ -44,6 +44,16 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    **sftworks S number:** when the `work_id`
    rotated, `/detail/S…` stayed the same on 3 of 3 jobs. Check more on the next
    sftworks scan; if it holds, propose it as the stable sftworks job id.
+4b. ✅ **Station pages fixed Oct 31** (`e9330c4`): the plain `LIKE` search put
+   Sannomiya and Utsunomiya on Omiya (178 shown, 45 real) and left Hirose-dori
+   empty and noindexed. `config/stations.php` now holds each station's spellings,
+   kanji and prefectures; listings across the 40 pages went 1,553 → 1,234.
+   **Next:** `station-nav-links` (`3dc6e8d`, commented-out theme menu, 8.2 KB a
+   page) rides with the next deploy. `station-explore-nearby` (`9c275ef`, Osaka's
+   8 pages) waits about a week, after the **owner exports the 28-day GSC baseline**
+   for those 8 URLs; compare 28 days of clicks, YoY same period, before the next
+   prefecture. **Area-slug bug:** `/part-time-jobs-in-kashiwa` and `-oyama` 301 to
+   the wrong prefecture (55 + 19 jobs with no reachable area page), separate job.
 5. **161536 + 163726 — possible duplicate.** Both live, both on
    `ptj.sej.co.jp/.../entry/job/sub/13867` once the session id is stripped. The
    session-free link is a better dedupe key for 7-Eleven than the raw
@@ -615,6 +625,7 @@ Don't move ad placements during a suspected seasonal RPM dip until a Page-views-
 96. **Never let a string transform reach inside a CDATA section.** `cleanXmlInput`'s `html_entity_decode` + bare-`&` rule disagreed with the parser about CDATA, so either spelling of `&` in a CDATA title was stored as the five characters `&amp;` and shown as "Hall &amp;". Non-CDATA titles were always fine, which is why it hit 4 jobs and not 644. Split on `<!\[CDATA\[...\]\]>` and skip those parts.
 97. **Any column rendered raw needs an allow-list where it is written**, not a promise about the source. `strip_tags` alone is not enough — it keeps the TEXT inside a tag it removes, so `<script>alert(1)</script>` leaves `alert(1)` as visible prose; delete those elements whole first. And a byte-based `substr` on text that might contain markup or kanji breaks the page as soon as the data changes: `strip_tags` → `mb_substr` → escape.
 98. **Editing a job's title changes its URL.** `jobs` has NO slug column: `Job::getDetailPathAttribute()` builds the path from the title every time it renders (`Str::slug("{language}-{title}")`). So correcting a wage in a title moves the page — 151014 went from `…-in-kyoto-1200jpy` to `…-in-kyoto-1300jpy` on 2026-10-30. The old URL 301s to the new one (verified at origin; a cache-busted request is needed to see it, because the stale URL keeps serving 200 from the CDN for its `s-maxage=3600`). Nothing breaks, but it is a URL change on an indexed page, not a data edit: decide it deliberately, and expect Google to re-canonicalise. The four `&amp;` title fixes of 2026-10-28 moved their URLs the same way, which was not noticed at the time.
+99. **A regex over raw HTML reads straight through comments.** The station audit counted 28 "dead links" in `navigation.blade.php` that sit inside `<!-- -->`, so no visitor or crawler ever saw them, and the report went on to recommend a fix for them. Strip comments before counting links, and open the template before calling anything sitewide.
 
 ## 7. Tools, commands, procedures
 

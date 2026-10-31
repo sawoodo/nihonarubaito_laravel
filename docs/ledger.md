@@ -4,6 +4,65 @@ Decisions and hard-won lessons for nihonarubaito.com. This records why things ar
 
 ---
 
+## 2026-10-31 — station pages list the right station, not any text that contains its name
+
+**Deployed as `e9330c4`.** New `config/stations.php`, `app/Support/StationPattern.php`.
+
+A station page ran `LIKE '%omiya station%'` over seven columns with no word
+boundary, so the audit of the 40 sitemap pages found:
+
+- 1,553 placements: 1,169 right, 368 a different station (154 in the wrong
+  prefecture), 16 from other fields, and 68 real jobs missed.
+- Omiya claimed 178 listings with 45 real: Sannomiya and Utsunomiya end in
+  "omiya station". Only 9 of its first 30 cards were Omiya jobs.
+- Hirose-dori showed 0 of 29 and was noindexed, while still in the sitemap and
+  on the homepage: the page turns the slug's hyphen into a space, so it could
+  never match "Hirose-dori Station". Kyoto-Kawaramachi showed 2 of 27 for the
+  same reason.
+- The suspected cause, passing mentions in descriptions, was almost nothing: 19
+  jobs, 6 of them clearly false. 157007 was on the Shibuya page because its
+  description says it "is not near Shibuya Station".
+
+Each sitemap station now has hand-written spellings, kanji and prefectures. A page
+matches the station field only, with no letter or hyphen before the English name
+and no kanji or kana before the Japanese one. Other slugs stay a text search.
+
+Result, 1,553 → 1,234 (390 removed, 71 added): Omiya 40, Funabashi 15, Oyama 18,
+Hirose-dori 29, Kyoto-Kawaramachi 27, Hommachi 29, Namba unchanged at 53. Full
+before/after with samples: `docs/reports/station-match-2026-10-31.md`.
+
+The prefecture filter also takes 6 real jobs off a page, as specified: 149517,
+157169 and 160549 are Tokyo jobs listing a border station, 146538 is in Aichi,
+144522 in Fukuoka, 164363 in Kagoshima (a different Sendai). 5 Kyoto Omiya jobs
+left on purpose. All stay on their own prefecture and area pages.
+
+**Deploy check:** the two overwritten files matched git; four files by `.new`,
+lint and md5, then atomic mv; config cache rebuilt, `key_len=51 db=mysql
+env=production debug=false stations=40`. All 40 pages cache-busted: 200, shown
+count equal to expected, no noindex. 29 of Omiya's first 30 cards are titled
+Omiya. Homepage, prefecture, area, hand-cash, a non-config station, page 2 and
+search all 200. `laravel.log` has no entries since Oct 30. Local suite: 67 tests,
+1 failure, `ExampleTest`, which fails identically on `main` (no Mix manifest).
+
+**Lesson: a new `config/` file does nothing until `config:cache` runs, and the
+page gives no sign.** `stationFor()` returns null against an old cache and the
+page quietly stays a text search, so the check after a config deploy has to be a
+count that differs between the two.
+
+**Lesson: strip HTML comments before counting links.** The audit reported 28 dead
+theme links on every page. They sit inside a comment in `navigation.blade.php`, so
+no visitor or crawler ever saw them, and the regex just read through the comment.
+The removal is on `station-nav-links` (`3dc6e8d`): tidying, 8.2 KB a page, riding
+with the next deploy. `station-explore-nearby` (`9c275ef`) waits about a week so
+its effect stays separate from this one, and needs the owner's 28-day GSC export
+for the 8 Osaka pages first.
+
+**Found, parked:** `/part-time-jobs-in-kashiwa` 301s to Kashiwara (Osaka) and
+`/part-time-jobs-in-oyama` to Nishikasugai-Toyoyama (Aichi): the area-slug bug,
+leaving 55 and 19 published jobs with no reachable area page.
+
+---
+
 ## 2026-10-31 — the duplicates were coming from the Clone button, so Clone is gone and publishing is checked
 
 **Deployed as `f2022b6`, with the `job_match_discards` migration.**
