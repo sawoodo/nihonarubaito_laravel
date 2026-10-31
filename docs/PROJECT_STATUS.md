@@ -39,7 +39,9 @@ Detailed fix log lives in the repo: `docs/ledger.md`. Repo setup/deploy rules: `
    starting wage is below the October 2026 minimum of their prefecture, with the
    minimums verified from MHLW first (the table in CLAUDE.md is Oct 2025);
    (b) proposal: the link check reads the wage from each source page and flags
-   jobs whose stored wage differs. **sftworks S number:** when the `work_id`
+   jobs whose stored wage differs. **Flag only: each stale wage is fixed per job
+   at its review, never in a batch** (owner rule, see Decisions).
+   **sftworks S number:** when the `work_id`
    rotated, `/detail/S…` stayed the same on 3 of 3 jobs. Check more on the next
    sftworks scan; if it holds, propose it as the stable sftworks job id.
 5. **161536 + 163726 — possible duplicate.** Both live, both on
@@ -406,6 +408,7 @@ Don't move ad placements during a suspected seasonal RPM dip until a Page-views-
 ## 5. Decisions (permanent unless reversed)
 
 **SEO / indexing**
+- **No bulk edits that look automated (owner rule, 2026-10-31).** Don't change many existing pages at once in ways that look bot- or AI-driven to Google: bulk title rewrites, bulk wage edits, mass relinks, mass content changes. Follow the normal flow (translators, the daily link check, one job at a time as it comes up) unless there is no other option or it is truly necessary, and then do it gradually and say why. Detection and reports are fine; mass writes need the owner's explicit OK.
 - **JobPosting only on single-job detail pages** (`a5ae50c`, 2026-10-12). Rich Results Test "valid" = syntax, not policy.
 - **Noindex empty listing pages — three guards, all required** (`ListingController.php:354`, mirrored :475): (1) `$totalRows === 0`; (2) no editorial content (`strlen(strip_tags($blogPost->post)) > 500` exempts); (3) never a prefecture page — the 47 are never deindexed (a transient query failure on Tokyo would otherwise emit noindex and get cached 30 min). A noindex response drops `cache_max_age`. Search-results pages always `noindex, follow`.
 - **Legacy `/laravel/public/index.php/*` → 301** in two layers (`.htaccess` + `RedirectLeakedPaths.php`).

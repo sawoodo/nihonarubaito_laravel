@@ -42,6 +42,14 @@ Rebuilding is also what makes a `config/` or `.env` change take effect at all.
 Set 2026-10-24, after a deploy's `config:clear` left the cache absent for 19
 hours and 52 requests 500'd on the empty-`.env` fault it exists to mask.
 
+## Content Rule — NO BULK EDITS
+No bulk edits that look automated (owner rule, 2026-10-31). Don't change many
+existing pages at once in ways that look bot- or AI-driven to Google: bulk title
+rewrites, bulk wage edits, mass relinks, mass content changes. Follow the normal
+flow (translators, the daily link check, one job at a time as it comes up) unless
+there is no other option or it is truly necessary, and then do it gradually and
+say why. Detection and reports are fine; mass writes need the owner's explicit OK.
+
 ## Environment
 - Domain: https://nihonarubaito.com  |  Admin: /admin/login
 - Hosting: SiteGround (Japan server). `php artisan cache:clear` does NOT purge
