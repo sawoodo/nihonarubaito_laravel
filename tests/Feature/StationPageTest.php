@@ -188,6 +188,16 @@ class StationPageTest extends TestCase
         $this->assertCount(8, $page->viewData('explore_nearby'));
     }
 
+    public function test_the_click_event_comes_with_the_block(): void
+    {
+        $this->get('/part-time-jobs-at-namba-station')
+            ->assertSee('id="explore-nearby"', false)
+            ->assertSee("'explore_nearby_click'", false);
+
+        $this->get('/part-time-jobs-at-tokyo-station')->assertDontSee('explore_nearby_click', false);
+        $this->get('/part-time-jobs-at-asakusa-station')->assertDontSee('explore_nearby_click', false);
+    }
+
     public function test_kyobashi_links_both_prefectures(): void
     {
         $this->get('/part-time-jobs-at-kyobashi-station')

@@ -131,7 +131,7 @@
 
             {{-- Prefecture, area and station links of a station page --}}
             @if (! empty($explore_nearby))
-                <div class="nearby-prefectures" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                <div id="explore-nearby" class="nearby-prefectures" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
                     <h3>Explore Nearby</h3>
                     <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
                         @foreach ($explore_nearby as $link)
@@ -174,4 +174,15 @@
 
 @push('page-scripts')
     <script src="{{ mix('js/frontend-app-pages/home/index.js') }}" defer></script>
+    {{-- gtag is defined after this stack, so it is only called on the click --}}
+    @if (! empty($explore_nearby))
+        <script>
+            document.getElementById('explore-nearby').addEventListener('click', function (event) {
+                var link = event.target.closest('a');
+                if (link) {
+                    gtag('event', 'explore_nearby_click', { nearby_link: link.pathname, transport_type: 'beacon' });
+                }
+            });
+        </script>
+    @endif
 @endpush
